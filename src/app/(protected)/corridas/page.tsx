@@ -149,7 +149,7 @@ export default function CorridasPage() {
 
   const getCategoryTitle = (category?: string) => {
     if (category === 'CONFORT') return 'SR Confort';
-    if (category === 'MOTO') return 'SR Moto';
+    if (category === 'EXECUTIVO') return 'SR Executivo';
     if (category === 'ENTREGA') return 'SR Entrega';
     return 'SR Pop';
   };

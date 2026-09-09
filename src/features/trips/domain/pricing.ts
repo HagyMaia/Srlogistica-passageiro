@@ -32,15 +32,15 @@ export const CATEGORY_RATES: Record<TripCategory, CategoryRate> = {
     capacity: '4 pessoas',
     icon: 'shield-check'
   },
-  MOTO: {
-    baseFare: 4.00,
-    perKm: 1.40,
-    perMinute: 0.20,
-    minFare: 6.50,
-    name: 'SR Moto',
-    description: 'Chegue mais rápido evitando o trânsito pesado',
-    capacity: '1 pessoa',
-    icon: 'bike'
+  EXECUTIVO: {
+    baseFare: 10.00,
+    perKm: 3.50,
+    perMinute: 0.60,
+    minFare: 18.00,
+    name: 'SR Executivo',
+    description: 'Sedãs de alto padrão, climatizados e máxima discrição',
+    capacity: '4 pessoas',
+    icon: 'sparkles'
   },
   ENTREGA: {
     baseFare: 6.00,
@@ -96,12 +96,12 @@ export function getAvailableCategories({
   durationSeconds: number;
   surgeMultiplier?: number;
 }): CategoryOption[] {
-  const categories: TripCategory[] = ['POPULAR', 'CONFORT', 'MOTO', 'ENTREGA'];
+  const categories: TripCategory[] = ['POPULAR', 'CONFORT', 'EXECUTIVO', 'ENTREGA'];
 
   return categories.map((catKey) => {
     const rate = CATEGORY_RATES[catKey];
     const calc = calculateFare({ distanceMeters, durationSeconds, category: catKey, surgeMultiplier });
-    const etaVariation = catKey === 'MOTO' ? -2 : catKey === 'CONFORT' ? 1 : 0;
+    const etaVariation = catKey === 'EXECUTIVO' ? 2 : catKey === 'CONFORT' ? 1 : 0;
     const baseEta = Math.max(2, Math.round(durationSeconds / 300) + etaVariation);
 
     return {

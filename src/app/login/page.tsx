@@ -47,7 +47,7 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Verifica se o cadastro está com aprovação pendente no banco
+        // Verifica se o cadastro está com aprovação pendente no banco (tabelas profiles e passageiros)
         try {
           const { data: profData } = await supabase
             .from('profiles')
@@ -55,16 +55,28 @@ export default function LoginPage() {
             .eq('id', data.user.id)
             .maybeSingle();
 
-          if (profData) {
-            const isApproved = profData.is_approved ?? profData.approved ?? (profData.status === 'active' || profData.status === 'approved' || false);
-            if (!isApproved && profData.status === 'pending') {
-              setPendingApprovalUser({
-                email: profData.email || email,
-                name: profData.name || profData.nome || 'Passageiro'
-              });
-              setLoading(false);
-              return;
-            }
+          const { data: passData } = await supabase
+            .from('passageiros')
+            .select('*')
+            .eq('id', data.user.id)
+            .maybeSingle();
+
+          const passStatus = passData?.status;
+          const profStatus = profData?.status;
+          const isApproved = 
+            passStatus === 'Aprovado' || 
+            profData?.is_approved === true || 
+            profData?.approved === true || 
+            profStatus === 'active' || 
+            profStatus === 'approved';
+
+          if (!isApproved && (passStatus === 'Pendente' || profStatus === 'pending')) {
+            setPendingApprovalUser({
+              email: passData?.email || profData?.email || email,
+              name: passData?.nome_social || passData?.nome || profData?.name || profData?.nome || 'Passageiro'
+            });
+            setLoading(false);
+            return;
           }
         } catch (_) {}
       }

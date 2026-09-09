@@ -10,13 +10,15 @@ import {
   Lock,
   ArrowRight,
   Navigation,
-  CheckCircle,
+  Building,
+  Briefcase,
   ShieldCheck,
   Clock,
   MessageSquare,
   Globe,
   ExternalLink,
-  Sparkles
+  Sparkles,
+  CreditCard
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
@@ -27,6 +29,9 @@ export default function CadastroPage() {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [telefone, setTelefone] = useState('');
+  const [empresa, setEmpresa] = useState('');
+  const [setor, setSetor] = useState('');
+  const [cpf, setCpf] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -37,16 +42,28 @@ export default function CadastroPage() {
     setLoading(true);
     setErrorMsg(null);
 
+    const cleanNome = nome.trim();
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanTelefone = telefone.trim();
+    const cleanEmpresa = empresa.trim() || 'Passageiro Particular / Convênio';
+    const cleanSetor = setor.trim() || 'Operações / Geral';
+    const cleanCpf = cpf.trim() || 'Não informado';
+
     try {
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
           data: {
-            name: nome,
-            nome: nome,
-            telefone: telefone,
-            phone: telefone,
+            name: cleanNome,
+            nome: cleanNome,
+            phone: cleanTelefone,
+            telefone: cleanTelefone,
+            company: cleanEmpresa,
+            empresa: cleanEmpresa,
+            department: cleanSetor,
+            setor: cleanSetor,
+            cpf: cleanCpf,
             role: 'passenger',
             status: 'pending',
             is_approved: false
@@ -60,31 +77,61 @@ export default function CadastroPage() {
         return;
       }
 
-      // Se o usuário foi criado com sucesso, insere na tabela de perfis com status pendente
+      const userId = data?.user?.id || `pass-${Date.now()}`;
+
+      // 1. Grava na tabela 'passageiros' (lida diretamente pelo Painel Admin de Operações em admin.html)
+      try {
+        await supabase.from('passageiros').insert([
+          {
+            id: userId,
+            nome: cleanNome,
+            nome_social: cleanNome.split(' ')[0],
+            nome_completo: cleanNome,
+            cpf: cleanCpf,
+            telefone: cleanTelefone,
+            email: cleanEmail,
+            empresa: cleanEmpresa,
+            setor: cleanSetor,
+            matricula: 'App Passageiro',
+            turno: 'Turno Comercial',
+            origem: 'App Passageiro',
+            status: 'Pendente',
+            created_at: new Date().toISOString()
+          }
+        ]);
+      } catch (errPass) {
+        console.warn('Registro em passageiros:', errPass);
+      }
+
+      // 2. Grava na tabela 'profiles'
       if (data?.user) {
         try {
           await supabase.from('profiles').insert({
             id: data.user.id,
-            name: nome,
-            email: email,
-            phone: telefone,
+            name: cleanNome,
+            email: cleanEmail,
+            phone: cleanTelefone,
+            company: cleanEmpresa,
+            department: cleanSetor,
             role: 'passenger',
             status: 'pending',
             is_approved: false,
             created_at: new Date().toISOString()
           });
-        } catch (_) {}
+        } catch (errProf) {
+          console.warn('Registro em profiles:', errProf);
+        }
       }
 
       setRegisteredSuccess(true);
     } catch {
-      setErrorMsg('Erro inesperado ao criar conta.');
+      setErrorMsg('Erro inesperado ao criar conta. Verifique os dados e tente novamente.');
       setLoading(false);
     }
   };
 
   const whatsappMessage = encodeURIComponent(
-    `Olá! Acabei de me cadastrar no App SR Passageiro (${nome}, e-mail: ${email}) e gostaria de solicitar a aprovação da minha conta no painel admin.`
+    `Olá Central SR Logística! Acabei de enviar meu cadastro de passageiro no App (${nome}, Empresa: ${empresa || 'Particular'}, E-mail: ${email}) e gostaria da liberação no painel admin.`
   );
 
   if (registeredSuccess) {
@@ -97,14 +144,32 @@ export default function CadastroPage() {
 
           <div>
             <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-xs font-bold mb-2">
-              Aprovação de Cadastro
+              Aguardando Aprovação no Painel Admin
             </Badge>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-              Cadastro Realizado!
+              Solicitação Enviada!
             </h1>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-300 max-w-sm mx-auto">
-              Seu cadastro foi registrado com sucesso. Para segurança de todos os usuários, novas contas passam por uma rápida verificação antes do primeiro acesso.
+              Seu cadastro foi enviado com sucesso para a central de operações da <strong>SR Logística</strong> e está na fila de aprovação de passageiros.
             </p>
+          </div>
+
+          {/* Card com Detalhes Cadastrados */}
+          <div className="rounded-2xl border border-slate-200 dark:border-dark-800 bg-white dark:bg-dark-900 p-4 text-left text-xs space-y-1.5 shadow-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Passageiro:</span>
+              <span className="font-bold text-slate-800 dark:text-white">{nome}</span>
+            </div>
+            {empresa && (
+              <div className="flex justify-between">
+                <span className="text-slate-400">Empresa:</span>
+                <span className="font-bold text-slate-800 dark:text-white">{empresa}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-slate-400">Status:</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400">Pendente de Validação</span>
+            </div>
           </div>
 
           {/* Card de Agilização via WhatsApp */}
@@ -114,7 +179,7 @@ export default function CadastroPage() {
               <span>Deseja aprovação rápida agora?</span>
             </div>
             <p className="text-[11px] text-slate-600 dark:text-slate-300">
-              Clique em um dos números da nossa central de atendimento para enviar sua solicitação de liberação instantânea:
+              Notifique nossos operadores para liberar seu acesso imediatamente no painel:
             </p>
 
             <div className="space-y-2 pt-1">
@@ -157,7 +222,7 @@ export default function CadastroPage() {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 font-bold text-brand-700 dark:text-brand hover:underline"
           >
-            <Globe size={14} /> Conheça o site oficial da SR Logística <ExternalLink size={12} />
+            <Globe size={14} /> Painel Administrativo e Site SR Logística <ExternalLink size={12} />
           </a>
         </div>
       </div>
@@ -173,14 +238,14 @@ export default function CadastroPage() {
             <Navigation size={22} />
           </div>
           <span className="text-xs font-black uppercase tracking-widest text-brand-700 dark:text-brand">
-            SR Logística
+            SR Logística & Transporte
           </span>
         </div>
         <h1 className="text-2xl font-black text-slate-900 dark:text-white">
-          Criar Conta Passageiro
+          Cadastro de Passageiro
         </h1>
         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Preencha seus dados para solicitar viagens em segundos.
+          Preencha seus dados para envio direto ao Centro de Operações.
         </p>
       </div>
 
@@ -193,49 +258,93 @@ export default function CadastroPage() {
             </div>
           )}
 
-          <Field label="Nome Completo">
+          <Field label="Nome Completo *">
             <div className="relative">
               <Input
                 type="text"
                 required
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
-                placeholder="Ex: Ana Clara Souza"
+                placeholder="Ex: Carlos Eduardo Costa"
                 className="pl-10"
               />
               <User className="absolute left-3.5 top-3 text-slate-400" size={16} />
             </div>
           </Field>
 
-          <Field label="E-mail">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Telefone / WhatsApp *">
+              <div className="relative">
+                <Input
+                  type="tel"
+                  required
+                  value={telefone}
+                  onChange={(e) => setTelefone(e.target.value)}
+                  placeholder="(92) 99999-9999"
+                  className="pl-10"
+                />
+                <Phone className="absolute left-3.5 top-3 text-slate-400" size={16} />
+              </div>
+            </Field>
+
+            <Field label="CPF (Opcional)">
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                  className="pl-10"
+                />
+                <CreditCard className="absolute left-3.5 top-3 text-slate-400" size={16} />
+              </div>
+            </Field>
+          </div>
+
+          <Field label="E-mail *">
             <div className="relative">
               <Input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="seu.email@exemplo.com"
+                placeholder="nome@empresa.com.br ou pessoal"
                 className="pl-10"
               />
               <Mail className="absolute left-3.5 top-3 text-slate-400" size={16} />
             </div>
           </Field>
 
-          <Field label="Telefone / WhatsApp">
-            <div className="relative">
-              <Input
-                type="tel"
-                required
-                value={telefone}
-                onChange={(e) => setTelefone(e.target.value)}
-                placeholder="(92) 99999-9999"
-                className="pl-10"
-              />
-              <Phone className="absolute left-3.5 top-3 text-slate-400" size={16} />
-            </div>
-          </Field>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Empresa Conveniada / Solicitante *">
+              <div className="relative">
+                <Input
+                  type="text"
+                  required
+                  value={empresa}
+                  onChange={(e) => setEmpresa(e.target.value)}
+                  placeholder="Ex: Moto Honda, Samsung, etc."
+                  className="pl-10"
+                />
+                <Building className="absolute left-3.5 top-3 text-slate-400" size={16} />
+              </div>
+            </Field>
 
-          <Field label="Senha (mínimo 6 caracteres)">
+            <Field label="Setor / Departamento">
+              <div className="relative">
+                <Input
+                  type="text"
+                  value={setor}
+                  onChange={(e) => setSetor(e.target.value)}
+                  placeholder="Ex: Produção, Qualidade, TI"
+                  className="pl-10"
+                />
+                <Briefcase className="absolute left-3.5 top-3 text-slate-400" size={16} />
+              </div>
+            </Field>
+          </div>
+
+          <Field label="Senha de Acesso (mínimo 6 caracteres) *">
             <div className="relative">
               <Input
                 type="password"
@@ -253,15 +362,15 @@ export default function CadastroPage() {
           <div className="rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3 text-[11px] text-slate-700 dark:text-slate-300 space-y-1">
             <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-400">
               <ShieldCheck size={14} />
-              <span>Validação de Segurança</span>
+              <span>Validação no Painel Admin</span>
             </div>
             <p>
-              Novos cadastros passam por verificação para liberação de corridas. Suporte direto: {SR_SUPPORT_CONFIG.phone1} / {SR_SUPPORT_CONFIG.phone2}.
+              Ao cadastrar, seus dados são transmitidos para o painel de aprovações da SR Logística para homologação.
             </p>
           </div>
 
           <Button type="submit" size="xl" full disabled={loading} className="mt-2">
-            {loading ? 'Criando Conta...' : 'Cadastrar e Solicitar Liberação'} <ArrowRight size={18} />
+            {loading ? 'Transmitindo Cadastro...' : 'Cadastrar e Solicitar Liberação'} <ArrowRight size={18} />
           </Button>
         </form>
       </div>

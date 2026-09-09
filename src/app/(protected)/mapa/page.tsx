@@ -8,7 +8,6 @@ import {
   Crosshair,
   Car,
   ShieldCheck,
-  Bike,
   Package,
   Building2,
   QrCode,
@@ -264,8 +263,8 @@ export default function MapaPage() {
         return <Car size={22} />;
       case 'shield-check':
         return <ShieldCheck size={22} />;
-      case 'bike':
-        return <Bike size={22} />;
+      case 'sparkles':
+        return <Sparkles size={22} />;
       case 'package':
         return <Package size={22} />;
       default:
@@ -280,8 +279,8 @@ export default function MapaPage() {
         return 'SR Pop';
       case 'CONFORT':
         return 'SR Confort';
-      case 'MOTO':
-        return 'SR Moto';
+      case 'EXECUTIVO':
+        return 'SR Executivo';
       case 'ENTREGA':
         return 'SR Entrega';
       default:

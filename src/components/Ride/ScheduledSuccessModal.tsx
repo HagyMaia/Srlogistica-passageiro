@@ -17,8 +17,8 @@ export function ScheduledSuccessModal({ trip, onClose }: ScheduledSuccessModalPr
       ? 'SR Pop'
       : trip.category === 'CONFORT'
       ? 'SR Confort'
-      : trip.category === 'MOTO'
-      ? 'SR Moto'
+      : trip.category === 'EXECUTIVO'
+      ? 'SR Executivo'
       : 'SR Entrega';
 
   return (

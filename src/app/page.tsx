@@ -9,7 +9,6 @@ import {
   Clock,
   Shield,
   Car,
-  Bike,
   Package,
   Sparkles,
   ChevronRight,
@@ -52,10 +51,10 @@ export default function HomePage() {
   }, [user, loadScheduledTrips]);
 
   const quickCategories = [
-    { id: 'POPULAR', name: 'Viagens', desc: 'Carros rápidos', icon: Car, bg: 'bg-amber-500/10 text-amber-600 dark:text-brand' },
-    { id: 'CONFORT', name: 'Confort', desc: 'Espaço e ar', icon: Shield, bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-    { id: 'MOTO', name: 'Mobi Moto', desc: 'Econômico', icon: Bike, bg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-    { id: 'ENTREGA', name: 'Entregas', desc: 'Envio rápido', icon: Package, bg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
+    { id: 'POPULAR', name: 'SR Pop', desc: 'Carros rápidos', icon: Car, bg: 'bg-amber-500/10 text-amber-600 dark:text-brand' },
+    { id: 'CONFORT', name: 'SR Confort', desc: 'Espaço e ar', icon: Shield, bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
+    { id: 'EXECUTIVO', name: 'SR Executivo', desc: 'Alto padrão', icon: Sparkles, bg: 'bg-amber-500/10 text-amber-700 dark:text-brand' },
+    { id: 'ENTREGA', name: 'SR Entregas', desc: 'Envio rápido', icon: Package, bg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
   ];
 
   const favoritePlaces = [
