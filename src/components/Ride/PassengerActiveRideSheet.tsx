@@ -19,6 +19,7 @@ import { Button, Badge } from '@/components/ui';
 import { formatCurrency, formatDistance, formatDuration } from '@/lib/utils';
 import { PassengerChatModal } from './PassengerChatModal';
 import { PassengerSafetyModal } from './PassengerSafetyModal';
+import { PixPaymentModal } from '@/components/PixPaymentModal';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
 import type { PassengerTrip } from '@/features/trips/domain/passenger-trip.types';
 
@@ -37,6 +38,7 @@ export function PassengerActiveRideSheet({
 }: PassengerActiveRideSheetProps) {
   const [showChatModal, setShowChatModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
+  const [showPixModal, setShowPixModal] = useState(false);
   const { chatMessages, unreadChatCount } = usePassengerTripStore();
 
   const driver = trip.driver || {
@@ -149,9 +151,19 @@ export function PassengerActiveRideSheet({
             <span className="text-base font-black text-brand-700 dark:text-brand">
               {formatCurrency(trip.estimatedFare)}
             </span>
-            <span className="text-[10px] text-slate-400">
-              {trip.paymentMethod === 'VOUCHER' ? '🏢 Voucher Quinzenal' : 'PIX'}
-            </span>
+            {trip.paymentMethod === 'PIX' ? (
+              <button
+                type="button"
+                onClick={() => setShowPixModal(true)}
+                className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full"
+              >
+                PIX: 52.967.828/0001-17 📋
+              </button>
+            ) : (
+              <span className="text-[10px] text-slate-400 font-semibold">
+                🏢 Voucher Quinzenal
+              </span>
+            )}
           </div>
         </div>
 
@@ -277,6 +289,14 @@ export function PassengerActiveRideSheet({
       <PassengerSafetyModal
         isOpen={showSafetyModal}
         onClose={() => setShowSafetyModal(false)}
+        tripId={trip.id}
+      />
+
+      {/* Modal de Pagamento PIX Oficial */}
+      <PixPaymentModal
+        isOpen={showPixModal}
+        onClose={() => setShowPixModal(false)}
+        amount={trip.estimatedFare}
         tripId={trip.id}
       />
     </>

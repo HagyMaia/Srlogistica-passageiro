@@ -1,9 +1,21 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
-import { Star, CheckCircle, Award, ThumbsUp, DollarSign, X } from 'lucide-react';
-import { Button, Input } from '@/components/ui';
+import {
+  Star,
+  CheckCircle,
+  Award,
+  ThumbsUp,
+  DollarSign,
+  X,
+  QrCode,
+  Copy,
+  Check,
+  ShieldCheck
+} from 'lucide-react';
+import { Button, Input, Badge } from '@/components/ui';
 import { formatCurrency, formatDistance, formatDuration } from '@/lib/utils';
+import { SR_PIX_CONFIG } from '@/types';
 import type { PassengerTrip } from '@/features/trips/domain/passenger-trip.types';
 
 interface RideFinishedModalProps {
@@ -14,8 +26,12 @@ interface RideFinishedModalProps {
 export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
   const [rating, setRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
-  const [selectedTags, setSelectedTags] = useState<string[]>(['Direção Segura', 'Carro Limpo']);
+  const [selectedTags, setSelectedTags] = useState<string[]>([
+    'Direção Segura',
+    'Carro Limpo'
+  ]);
   const [feedback, setFeedback] = useState('');
+  const [copiedPix, setCopiedPix] = useState(false);
 
   const tags = [
     'Direção Segura',
@@ -33,28 +49,47 @@ export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
     );
   };
 
+  const handleCopyPix = async () => {
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(SR_PIX_CONFIG.keyRaw);
+      }
+      setCopiedPix(true);
+      setTimeout(() => setCopiedPix(false), 2500);
+    } catch {
+      setCopiedPix(true);
+      setTimeout(() => setCopiedPix(false), 2500);
+    }
+  };
+
   const handleComplete = () => {
     const fullFeedback = [
       selectedTags.length > 0 ? `Tags: ${selectedTags.join(', ')}` : '',
       feedback.trim()
-    ].filter(Boolean).join(' | ');
+    ]
+      .filter(Boolean)
+      .join(' | ');
 
     onFinish(rating, fullFeedback);
   };
 
   return (
     <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in">
-      <div className="w-full max-w-sm rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-sm rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         {/* Header de Recibo */}
         <div className="bg-gradient-to-b from-brand/25 to-transparent p-6 text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-brand text-dark-950 shadow-lg shadow-brand/30 mb-3">
             <CheckCircle size={32} />
           </div>
-          <h2 className="text-xl font-black text-slate-900 dark:text-white">Viagem Finalizada!</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Esperamos que você tenha tido uma excelente viagem.</p>
-          
+          <h2 className="text-xl font-black text-slate-900 dark:text-white">
+            Viagem Finalizada!
+          </h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+            Esperamos que você tenha tido uma excelente viagem.
+          </p>
+
           <div className="mt-4 rounded-2xl bg-white/90 dark:bg-dark-800/90 border border-slate-200/80 dark:border-dark-700/80 p-3.5 shadow-sm">
-            <span className="text-xs font-semibold text-slate-400">Total pago</span>
+            <span className="text-xs font-semibold text-slate-400">Total a pagar</span>
             <div className="text-2xl font-black text-slate-900 dark:text-brand mt-0.5">
               {formatCurrency(trip.finalFare || trip.estimatedFare)}
             </div>
@@ -63,11 +98,42 @@ export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
               <span>•</span>
               <span>{formatDuration(trip.estimatedDurationSeconds)}</span>
               <span>•</span>
-              <span>
-                {trip.paymentMethod === 'VOUCHER' ? '🏢 Voucher Quinzenal' : 'PIX'}
+              <span className="font-bold">
+                {trip.paymentMethod === 'VOUCHER'
+                  ? '🏢 Voucher Quinzenal'
+                  : 'PIX Imediato'}
               </span>
             </div>
           </div>
+
+          {/* Destaque PIX Oficial da Empresa */}
+          {trip.paymentMethod === 'PIX' && (
+            <div className="mt-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 p-3 text-left space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">
+                  Chave PIX da Empresa (CNPJ)
+                </span>
+                <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-400">
+                  {SR_PIX_CONFIG.keyFormatted}
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCopyPix}
+                className={`flex items-center justify-center gap-1.5 w-full rounded-xl py-2 text-xs font-black transition active:scale-95 ${
+                  copiedPix
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm'
+                }`}
+              >
+                {copiedPix ? <Check size={14} /> : <Copy size={14} />}
+                {copiedPix
+                  ? 'Chave PIX Copiada!'
+                  : `Copiar Chave: ${SR_PIX_CONFIG.keyRaw}`}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Avaliação do Motorista */}
@@ -92,7 +158,11 @@ export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
                   >
                     <Star
                       size={30}
-                      className={isFilled ? 'text-brand fill-brand' : 'text-slate-300 dark:text-dark-700'}
+                      className={
+                        isFilled
+                          ? 'text-brand fill-brand'
+                          : 'text-slate-300 dark:text-dark-700'
+                      }
                     />
                   </button>
                 );
@@ -102,7 +172,9 @@ export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
 
           {/* Tags de Elogio */}
           <div>
-            <span className="text-[11px] font-semibold text-slate-400 block mb-2">Elogios Rápidos:</span>
+            <span className="text-[11px] font-semibold text-slate-400 block mb-2">
+              Elogios Rápidos:
+            </span>
             <div className="flex flex-wrap gap-1.5">
               {tags.map((tag) => {
                 const active = selectedTags.includes(tag);
@@ -135,12 +207,7 @@ export function RideFinishedModal({ trip, onFinish }: RideFinishedModalProps) {
           </div>
 
           {/* Botão Concluir */}
-          <Button
-            variant="primary"
-            size="lg"
-            full
-            onClick={handleComplete}
-          >
+          <Button variant="primary" size="lg" full onClick={handleComplete}>
             Enviar Avaliação
           </Button>
         </div>

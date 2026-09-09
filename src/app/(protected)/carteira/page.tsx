@@ -14,10 +14,13 @@ import {
   FileText,
   Calendar,
   Info,
+  Copy,
   Building
 } from 'lucide-react';
 import { Card, Button, Input, Badge, Field } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
+import { PixPaymentModal } from '@/components/PixPaymentModal';
+import { SR_PIX_CONFIG } from '@/types';
 import type { PaymentMethod } from '@/types';
 
 export default function CarteiraPage() {
@@ -34,6 +37,8 @@ export default function CarteiraPage() {
   );
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [savedCompanySuccess, setSavedCompanySuccess] = useState(false);
+  const [isPixModalOpen, setIsPixModalOpen] = useState(false);
+  const [copiedPixKey, setCopiedPixKey] = useState(false);
 
   const [couponCode, setCouponCode] = useState('');
   const [couponApplied, setCouponApplied] = useState<string | null>(null);
@@ -41,6 +46,20 @@ export default function CarteiraPage() {
   const handleSelectMethod = async (method: PaymentMethod) => {
     setSelectedMethod(method);
     await updateProfile({ payment_preference: method });
+  };
+
+  const handleCopyPixKey = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(SR_PIX_CONFIG.keyRaw);
+      }
+      setCopiedPixKey(true);
+      setTimeout(() => setCopiedPixKey(false), 2500);
+    } catch {
+      setCopiedPixKey(true);
+      setTimeout(() => setCopiedPixKey(false), 2500);
+    }
   };
 
   const handleSaveCorporateInfo = async (e: React.FormEvent) => {
@@ -75,7 +94,7 @@ export default function CarteiraPage() {
         </div>
         <h1 className="text-xl font-black text-slate-900 dark:text-white">Formas de Pagamento</h1>
         <p className="text-xs text-slate-400">
-          Selecione entre PIX imediato ou Voucher Corporativo faturado na quinzena
+          Selecione entre PIX imediato da empresa ou Voucher Corporativo quinzenal
         </p>
       </div>
 
@@ -88,33 +107,69 @@ export default function CarteiraPage() {
         {/* 1. PIX Imediato */}
         <div
           onClick={() => handleSelectMethod('PIX')}
-          className={`flex items-start justify-between rounded-3xl border p-4 cursor-pointer transition ${
+          className={`flex flex-col gap-3 rounded-3xl border p-4 cursor-pointer transition ${
             selectedMethod === 'PIX'
               ? 'border-brand bg-brand/10 dark:bg-brand/15 shadow-sm'
               : 'border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800'
           }`}
         >
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
-              <QrCode size={22} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">PIX Imediato</h3>
-                <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
-                  Instantâneo
-                </Badge>
+          <div className="flex items-start justify-between">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5">
+                <QrCode size={22} />
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Pagamento direto por QR Code ou chave Copia e Cola ao solicitar a corrida.
-              </p>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">PIX Imediato</h3>
+                  <Badge className="bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                    Oficial SR Logística
+                  </Badge>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Pagamento direto para a chave CNPJ oficial da empresa.
+                </p>
+              </div>
+            </div>
+            {selectedMethod === 'PIX' && (
+              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-dark-950 shrink-0">
+                <Check size={16} strokeWidth={3} />
+              </div>
+            )}
+          </div>
+
+          {/* Destaque da Chave PIX Oficial */}
+          <div className="rounded-2xl bg-white/80 dark:bg-dark-900/80 border border-emerald-500/30 p-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-slate-400 block uppercase">
+                Chave PIX (CNPJ Oficial)
+              </span>
+              <span className="text-xs font-black text-emerald-700 dark:text-emerald-400 font-mono">
+                {SR_PIX_CONFIG.keyFormatted}
+              </span>
+            </div>
+
+            <div className="flex gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={handleCopyPixKey}
+                className="flex items-center gap-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1.5 text-[11px] font-bold shadow-sm transition active:scale-95"
+              >
+                {copiedPixKey ? <Check size={13} /> : <Copy size={13} />}
+                {copiedPixKey ? 'Copiada!' : 'Copiar Chave'}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsPixModalOpen(true);
+                }}
+                className="rounded-xl border border-slate-300 dark:border-dark-700 bg-slate-100 dark:bg-dark-800 text-slate-700 dark:text-slate-200 px-2 py-1.5 text-[11px] font-bold hover:bg-slate-200 transition"
+              >
+                Ver QR Code
+              </button>
             </div>
           </div>
-          {selectedMethod === 'PIX' && (
-            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-brand text-dark-950 shrink-0">
-              <Check size={16} strokeWidth={3} />
-            </div>
-          )}
         </div>
 
         {/* 2. Voucher Corporativo (Faturamento Quinzenal) */}
@@ -140,7 +195,7 @@ export default function CarteiraPage() {
                 </Badge>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Corrida enviada e faturada diretamente para a empresa solicitante, com pagamento consolidado a cada quinzena.
+                Corrida enviada e faturada diretamente para a empresa conveniada, com fechamento quinzenal.
               </p>
             </div>
           </div>
@@ -271,6 +326,12 @@ export default function CarteiraPage() {
           </div>
         )}
       </div>
+
+      {/* Modal de Detalhes do PIX */}
+      <PixPaymentModal
+        isOpen={isPixModalOpen}
+        onClose={() => setIsPixModalOpen(false)}
+      />
     </div>
   );
 }

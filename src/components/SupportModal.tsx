@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import {
@@ -39,7 +39,7 @@ export function SupportModal({ isOpen, onClose }: SupportModalProps) {
     },
     {
       q: 'Quais as formas de pagamento aceitas?',
-      a: 'Aceitamos PIX Direto no App, Cartões de Crédito e Dinheiro em espécie pago diretamente ao motorista parceiro.'
+      a: 'Aceitamos PIX Direto via chave oficial CNPJ 52.967.828/0001-17 (SR Logística) e Voucher Corporativo com faturamento quinzenal para empresas parceiras.'
     },
     {
       q: 'Esqueci um item no veículo. O que fazer?',

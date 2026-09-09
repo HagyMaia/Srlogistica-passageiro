@@ -55,11 +55,22 @@ export interface CorporateVoucherConfig {
   isActive: boolean;
 }
 
+export const SR_PIX_CONFIG = {
+  keyRaw: '52967828000117',
+  keyFormatted: '52.967.828/0001-17',
+  keyType: 'CNPJ',
+  beneficiaryName: 'SR LOGÍSTICA E TRANSPORTES',
+  city: 'Manaus - AM',
+  description: 'Pagamento de Corrida - SR Logística'
+};
+
 export const SR_SUPPORT_CONFIG = {
   phone1: '(92) 98492-3316',
   phone1Raw: '559284923316',
   phone2: '(92) 99130-6160',
   phone2Raw: '5592991306160',
+  pixKey: '52967828000117',
+  pixKeyFormatted: '52.967.828/0001-17',
   websiteUrl: 'https://srlogisticatrasporte.vercel.app/',
   adminUrl: 'https://srlogisticatrasporte.vercel.app/admin.html',
   city: 'Manaus - AM',
