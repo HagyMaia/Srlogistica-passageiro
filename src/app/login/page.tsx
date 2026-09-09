@@ -69,7 +69,7 @@ export default function LoginPage() {
         } catch (_) {}
       }
 
-      router.push('/mapa');
+      window.location.href = '/mapa';
     } catch {
       setErrorMsg('Erro inesperado ao conectar.');
       setLoading(false);
@@ -85,7 +85,7 @@ export default function LoginPage() {
         email: 'passageiro@demo.local',
         password: 'demo123'
       });
-      router.push('/mapa');
+      window.location.href = '/mapa';
     } catch {
       setErrorMsg('Falha ao entrar como passageiro demo.');
       setLoading(false);

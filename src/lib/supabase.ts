@@ -17,8 +17,14 @@ export type DemoSession = {
   user: DemoUser;
 };
 
-const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const DEFAULT_SUPABASE_URL = 'https://lvdplhnbkkmlcxeuqhdo.supabase.co';
+const DEFAULT_SUPABASE_KEY = 'sb_publishable_CoC8vHLwAQ3kGsXwWBlaoA_4LB5SzsK';
+
+const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || DEFAULT_SUPABASE_URL;
+const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  DEFAULT_SUPABASE_KEY;
 
 export const isSupabaseConfigured = Boolean(
   rawUrl &&
@@ -38,8 +44,8 @@ function normalizeSupabaseUrl(url: string) {
   }
 }
 
-export const browserUrl = isSupabaseConfigured ? normalizeSupabaseUrl(rawUrl as string) : 'https://placeholder.supabase.co';
-const browserKey = supabaseAnonKey || 'placeholder-anon-key';
+export const browserUrl = isSupabaseConfigured ? normalizeSupabaseUrl(rawUrl as string) : DEFAULT_SUPABASE_URL;
+const browserKey = supabaseAnonKey || DEFAULT_SUPABASE_KEY;
 
 const DEMO_PASSENGERS_KEY = 'sr-demo-passengers';
 const DEMO_ACCOUNTS_KEY = 'sr-demo-passenger-accounts';
