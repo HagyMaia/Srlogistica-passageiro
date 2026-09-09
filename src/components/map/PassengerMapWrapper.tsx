@@ -1,0 +1,33 @@
+'use client';
+
+import dynamic from 'next/dynamic';
+import type { LocationCoordinates, DriverInfo } from '@/types';
+
+interface PassengerMapProps {
+  origin: LocationCoordinates | null;
+  destination: LocationCoordinates | null;
+  routeCoordinates?: Array<[number, number]>;
+  driver?: DriverInfo | null;
+  nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
+  onMapClick?: (coords: [number, number]) => void;
+  className?: string;
+}
+
+const DynamicPassengerMap = dynamic(
+  () => import('./PassengerMap'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-full min-h-[300px] flex items-center justify-center bg-slate-100 dark:bg-dark-950/80 animate-pulse">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin" />
+          <span className="text-xs font-bold text-slate-500 dark:text-slate-400">Carregando mapa interativo...</span>
+        </div>
+      </div>
+    )
+  }
+);
+
+export function PassengerMapWrapper(props: PassengerMapProps) {
+  return <DynamicPassengerMap {...props} />;
+}

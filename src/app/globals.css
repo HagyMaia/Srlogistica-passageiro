@@ -1,0 +1,91 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #F4F7FA;
+  --surface: #FFFFFF;
+  --surface-card: #FFFFFF;
+  --surface-muted: #F1F5F9;
+  --border: #E2E8F0;
+  --brand: #FFC800;
+  --brand-hover: #E5B400;
+  --brand-dark: #1A1A1A;
+  --muted: #64748B;
+  --text: #0B1224;
+  --text-muted: #64748B;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #070D18;
+  --surface: #0B1220;
+  --surface-card: #0F172A;
+  --surface-muted: #1E293B;
+  --border: #1E293B;
+  --brand: #FFC800;
+  --brand-hover: #E5B400;
+  --brand-dark: #1A1A1A;
+  --muted: #94A3B8;
+  --text: #F8FAFC;
+  --text-muted: #94A3B8;
+  color-scheme: dark;
+}
+
+html,
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  overscroll-behavior-y: none;
+  background:
+    radial-gradient(circle at top, rgba(255, 200, 0, 0.08), transparent 30%),
+    linear-gradient(180deg, var(--bg) 0%, #E2E8F0 100%);
+  color: var(--text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body {
+  background:
+    radial-gradient(circle at top, rgba(255, 200, 0, 0.12), transparent 30%),
+    linear-gradient(180deg, #070D18 0%, #0B1220 100%);
+}
+
+/* Leaflet Styling */
+.leaflet-container {
+  background: #e5e7eb;
+  font-family: inherit;
+  z-index: 0;
+}
+
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.7) !important;
+  color: #64748b !important;
+  font-size: 8px !important;
+}
+
+.custom-passenger-pin,
+.custom-destination-pin,
+.custom-car-pin {
+  background: transparent;
+  border: none;
+}
+
+@layer utilities {
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}
+
+@layer base {
+  html, body {
+    height: 100%;
+  }
+}
