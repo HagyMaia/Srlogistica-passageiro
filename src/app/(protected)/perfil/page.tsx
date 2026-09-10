@@ -692,10 +692,10 @@ export default function PerfilPage() {
             <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
               <div className="p-3.5 rounded-2xl bg-brand/10 border border-brand/20">
                 <h4 className="font-black text-slate-900 dark:text-white text-sm mb-1 flex items-center gap-1.5">
-                  🤖 Como instalar no Android:
+                  🤖 Opção 1: Instalação Instantânea (Recomendado)
                 </h4>
                 <ol className="list-decimal pl-4 space-y-1.5 text-slate-700 dark:text-slate-300 font-medium">
-                  <li>Toque no menu de <strong>três pontinhos (⋮)</strong> no canto superior direito do seu navegador Google Chrome.</li>
+                  <li>Toque no menu de <strong>três pontinhos (⋮)</strong> no canto superior direito do Google Chrome.</li>
                   <li>Selecione a opção <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.</li>
                   <li>O aplicativo será adicionado como um **APK nativo** no seu celular com ícone oficial e tela cheia!</li>
                 </ol>
@@ -703,6 +703,22 @@ export default function PerfilPage() {
 
               <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-dark-700/60 border border-slate-200 dark:border-dark-600">
                 <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 flex items-center gap-1.5">
+                  📥 Opção 2: Baixar Arquivo APK Físico
+                </h4>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400 mb-2.5">
+                  Baixe o instalador direto para instalar no celular ou enviar por WhatsApp:
+                </p>
+                <a
+                  href="/sr-passageiro.apk"
+                  download="sr-passageiro.apk"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2 text-xs font-black text-dark-950 shadow-md hover:bg-brand-hover transition active:scale-95"
+                >
+                  <Download size={14} /> Baixar Arquivo sr-passageiro.apk
+                </a>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-slate-50 dark:bg-dark-900/40 border border-slate-200 dark:border-dark-700">
+                <h4 className="font-black text-slate-900 dark:text-white text-xs mb-0.5 flex items-center gap-1.5">
                   🍎 No iPhone (iOS):
                 </h4>
                 <p className="text-[11px] text-slate-600 dark:text-slate-400">
@@ -713,13 +729,13 @@ export default function PerfilPage() {
 
             <Button
               type="button"
-              variant="primary"
+              variant="outline"
               size="md"
               full
               onClick={() => setIsInstallModalOpen(false)}
               className="py-2.5"
             >
-              Entendi
+              Fechar
             </Button>
           </div>
         </div>

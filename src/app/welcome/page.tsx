@@ -1,33 +1,53 @@
-﻿'use client';
+'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import {
   Navigation,
   Sparkles,
-  Calendar,
   Building2,
   QrCode,
-  ShieldCheck,
   ArrowRight,
   Globe,
   ExternalLink,
   Star,
-  MapPin,
-  Clock,
-  Car,
-  CheckCircle2,
   Lock,
-  PhoneCall
+  Smartphone,
+  Download
 } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
-import { SR_SUPPORT_CONFIG, SR_PIX_CONFIG } from '@/types';
+import { SR_SUPPORT_CONFIG } from '@/types';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function WelcomePage() {
   const [demoLoading, setDemoLoading] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setIsInstallModalOpen(true);
+    }
+  };
 
   const handleDemoLogin = async () => {
     setDemoLoading(true);
@@ -182,6 +202,17 @@ export default function WelcomePage() {
             </Button>
           </Link>
 
+          {/* Botão de Instalar / Baixar App no Celular */}
+          <button
+            type="button"
+            onClick={handleInstallApp}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-amber-500/15 border border-amber-500/30 p-2.5 text-xs font-black text-amber-300 hover:bg-amber-500/25 transition active:scale-[0.99]"
+          >
+            <Smartphone size={15} className="text-amber-400" />
+            <span>Instalar Aplicativo no Celular (Android / APK)</span>
+            <Download size={14} className="text-amber-400 opacity-80" />
+          </button>
+
           {/* Acesso Demo Rápido de 1 Toque */}
           <button
             type="button"
@@ -221,6 +252,75 @@ export default function WelcomePage() {
           </div>
         </div>
       </div>
+
+      {/* Modal de Instalação do Aplicativo Android (APK / WebAPK) */}
+      {isInstallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-dark-900 p-5 shadow-2xl border border-dark-700 space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-dark-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Smartphone size={18} className="text-brand" />
+                <h3 className="text-base font-black text-white">Instalar no Celular</h3>
+              </div>
+              <button
+                onClick={() => setIsInstallModalOpen(false)}
+                className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3.5 rounded-2xl bg-brand/10 border border-brand/20">
+                <h4 className="font-black text-white text-sm mb-1 flex items-center gap-1.5">
+                  🤖 Opção 1: Instalação Instantânea (Recomendado)
+                </h4>
+                <ol className="list-decimal pl-4 space-y-1.5 text-slate-300 font-medium text-[11px]">
+                  <li>Toque no menu de <strong>três pontinhos (⋮)</strong> no canto superior direito do Google Chrome.</li>
+                  <li>Selecione <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.</li>
+                  <li>O aplicativo será instalado como um **APK nativo** no celular com ícone oficial da SR Logística!</li>
+                </ol>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-dark-800 border border-dark-700">
+                <h4 className="font-black text-white text-xs mb-1 flex items-center gap-1.5">
+                  📥 Opção 2: Baixar Arquivo APK Físico
+                </h4>
+                <p className="text-[11px] text-slate-400 mb-2">
+                  Baixe o instalador direto para instalar no celular ou enviar aos seus contatos:
+                </p>
+                <a
+                  href="/sr-passageiro.apk"
+                  download="sr-passageiro.apk"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2 text-xs font-black text-dark-950 shadow-md hover:bg-brand-hover transition active:scale-95"
+                >
+                  <Download size={14} /> Baixar Arquivo sr-passageiro.apk
+                </a>
+              </div>
+
+              <div className="p-3 rounded-2xl bg-dark-800/60 border border-dark-700">
+                <h4 className="font-black text-white text-xs mb-0.5 flex items-center gap-1.5">
+                  🍎 No iPhone (iOS):
+                </h4>
+                <p className="text-[11px] text-slate-400">
+                  Toque no botão <strong>Compartilhar</strong> no Safari e clique em <strong>"Adicionar à Tela de Início"</strong>.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              full
+              onClick={() => setIsInstallModalOpen(false)}
+              className="py-2.5 font-bold"
+            >
+              Entendi
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
