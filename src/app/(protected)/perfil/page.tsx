@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   User,
   Camera,
@@ -21,7 +21,9 @@ import {
   Award,
   Trash2,
   Upload,
-  Check
+  Check,
+  Smartphone,
+  Download
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -83,6 +85,33 @@ export default function PerfilPage() {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  // Escuta evento do Android para instalação direta do aplicativo
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else {
+      setIsInstallModalOpen(true);
+    }
+  };
 
   // Manipulador de Upload de Foto com compressão automática via Canvas
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,6 +463,28 @@ export default function PerfilPage() {
 
       {/* Central de Ajuda & Links Oficiais */}
       <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-2 space-y-1 shadow-sm text-xs">
+        {/* Botão de Instalação do App no Celular */}
+        <button
+          type="button"
+          onClick={handleInstallApp}
+          className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-brand/10 hover:bg-brand/20 border border-brand/30 transition text-left"
+        >
+          <div className="flex items-center gap-3 text-slate-900 dark:text-white font-bold">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-dark-950 font-black shadow-md shadow-brand/20">
+              <Smartphone size={18} />
+            </div>
+            <div>
+              <span className="text-sm font-black block flex items-center gap-1.5">
+                Instalar Aplicativo (Android / APK) <Sparkles size={13} className="text-amber-500" />
+              </span>
+              <p className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">
+                Adicionar à tela de início com ícone e tela cheia
+              </p>
+            </div>
+          </div>
+          <Download size={16} className="text-brand shrink-0" />
+        </button>
+
         <button
           type="button"
           onClick={() => setIsSupportOpen(true)}
@@ -617,6 +668,59 @@ export default function PerfilPage() {
                 Sim, Sair
               </Button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Instalação do Aplicativo Android (APK / WebAPK) */}
+      {isInstallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-dark-800 p-5 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Smartphone size={18} className="text-brand" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">Instalar Aplicativo</h3>
+              </div>
+              <button
+                onClick={() => setIsInstallModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3.5 rounded-2xl bg-brand/10 border border-brand/20">
+                <h4 className="font-black text-slate-900 dark:text-white text-sm mb-1 flex items-center gap-1.5">
+                  🤖 Como instalar no Android:
+                </h4>
+                <ol className="list-decimal pl-4 space-y-1.5 text-slate-700 dark:text-slate-300 font-medium">
+                  <li>Toque no menu de <strong>três pontinhos (⋮)</strong> no canto superior direito do seu navegador Google Chrome.</li>
+                  <li>Selecione a opção <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.</li>
+                  <li>O aplicativo será adicionado como um **APK nativo** no seu celular com ícone oficial e tela cheia!</li>
+                </ol>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-dark-700/60 border border-slate-200 dark:border-dark-600">
+                <h4 className="font-black text-slate-900 dark:text-white text-xs mb-1 flex items-center gap-1.5">
+                  🍎 No iPhone (iOS):
+                </h4>
+                <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Toque no botão <strong>Compartilhar (quadrado com seta)</strong> no Safari e clique em <strong>"Adicionar à Tela de Início"</strong>.
+                </p>
+              </div>
+            </div>
+
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              full
+              onClick={() => setIsInstallModalOpen(false)}
+              className="py-2.5"
+            >
+              Entendi
+            </Button>
           </div>
         </div>
       )}
