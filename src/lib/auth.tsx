@@ -14,17 +14,17 @@ interface AuthContextType {
 }
 
 const DEFAULT_PROFILE: PassengerProfile = {
-  id: 'demo-passenger-default',
-  name: 'Ana Clara Souza',
-  email: 'passageiro@demo.local',
-  phone: '(92) 99123-4567',
+  id: '',
+  name: '',
+  email: '',
+  phone: '',
   role: 'passenger',
-  avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-  rating: 4.95,
-  total_rides: 48,
+  avatar_url: '',
+  rating: 5.0,
+  total_rides: 0,
   payment_preference: 'PIX',
-  status: 'active',
-  is_approved: true,
+  status: 'pending',
+  is_approved: false,
   created_at: new Date().toISOString()
 };
 
@@ -49,16 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      if (currentUser.email === 'passageiro@demo.local' || !isSupabaseConfigured) {
-        setProfile({
-          ...DEFAULT_PROFILE,
-          id: currentUser.id,
-          email: currentUser.email || DEFAULT_PROFILE.email,
-          name: currentUser.user_metadata?.name || currentUser.user_metadata?.nome || DEFAULT_PROFILE.name
-        });
-        return;
-      }
-
       let profData: any = null;
       let passData: any = null;
 
@@ -124,16 +114,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profData?.telefone || 
         passData?.telefone || 
         userMeta.phone || 
-        userMeta.telefone;
+        userMeta.telefone || 
+        '';
 
-      // Se for aprovado mas a tabela profiles ainda não tiver o registro ou estiver desatualizada, atualiza/insere
+      const cachedAvatar = typeof window !== 'undefined' ? localStorage.getItem(`sr-passenger-avatar-${currentUser.id}`) : null;
+
+      const avatarVal = 
+        profData?.avatar_url || 
+        profData?.avatar || 
+        profData?.foto || 
+        profData?.foto_url || 
+        passData?.avatar_url || 
+        passData?.foto || 
+        passData?.foto_url || 
+        userMeta.avatar_url || 
+        userMeta.foto || 
+        userMeta.avatar || 
+        cachedAvatar || 
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
+
+      const companyVal = 
+        profData?.company || 
+        profData?.empresa || 
+        passData?.empresa || 
+        userMeta.company || 
+        userMeta.empresa || 
+        'SR Logística & Transporte';
+
+      const departmentVal = 
+        profData?.department || 
+        profData?.setor || 
+        passData?.setor || 
+        userMeta.department || 
+        userMeta.setor || 
+        'Operações e Gestão';
+
+      const paymentPreferenceVal = 
+        profData?.payment_preference || 
+        passData?.payment_preference || 
+        userMeta.payment_preference || 
+        'PIX';
+
+      // Sincroniza tabela profiles se for aprovado
       if (isApproved && isSupabaseConfigured) {
         try {
           await supabase.from('profiles').upsert({
             id: currentUser.id,
             email: currentUser.email,
             name: nameVal,
+            nome: nameVal,
             phone: phoneVal,
+            telefone: phoneVal,
+            avatar_url: avatarVal,
+            company: companyVal,
+            department: departmentVal,
+            payment_preference: paymentPreferenceVal,
             role: userMeta.role || profData?.role || 'passenger',
             status: 'active',
             is_approved: true,
@@ -147,11 +182,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name: nameVal,
         email: currentUser.email,
         phone: phoneVal,
-        avatar_url: profData?.avatar_url,
+        avatar_url: avatarVal,
+        company: companyVal,
+        department: departmentVal,
         role: (userMeta.role as any) || (profData?.role as any) || 'passenger',
         rating: profData?.rating || 5.0,
-        total_rides: profData?.total_rides || 48,
-        payment_preference: profData?.payment_preference || 'PIX',
+        total_rides: profData?.total_rides || 0,
+        payment_preference: paymentPreferenceVal,
         status: statusVal,
         is_approved: isApproved,
         created_at: profData?.created_at || passData?.created_at || new Date().toISOString()
@@ -204,7 +241,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    // Realtime: ouve aprovações na tabela passageiros e profiles
+    // Realtime: ouve atualizações nas tabelas passageiros e profiles
     const passChannel = supabase
       .channel('public:auth_approvals')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'passageiros' }, async () => {
@@ -247,22 +284,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const next = { ...profile, ...updates };
     setProfile(next);
 
+    // Salva cópia local para carregamento instantâneo
+    if (typeof window !== 'undefined' && user?.id) {
+      try {
+        if (next.avatar_url) {
+          localStorage.setItem(`sr-passenger-avatar-${user.id}`, next.avatar_url);
+        }
+        localStorage.setItem(`sr-passenger-profile-${user.id}`, JSON.stringify(next));
+      } catch (_) {}
+    }
+
     try {
       if (isSupabaseConfigured && user) {
-        await supabase
-          .from('profiles')
-          .update({
-            name: next.name,
-            nome: next.name,
-            phone: next.phone,
-            telefone: next.phone,
-            avatar_url: next.avatar_url,
-            payment_preference: next.payment_preference,
-            company: next.company,
-            department: next.department
-          })
-          .eq('id', user.id);
+        // 1. Atualiza nos metadados do Auth do Supabase (sempre persistente)
+        try {
+          await supabase.auth.updateUser({
+            data: {
+              name: next.name,
+              nome: next.name,
+              phone: next.phone,
+              telefone: next.phone,
+              avatar_url: next.avatar_url,
+              foto: next.avatar_url,
+              company: next.company,
+              empresa: next.company,
+              department: next.department,
+              setor: next.department,
+              payment_preference: next.payment_preference
+            }
+          });
+        } catch (_) {}
 
+        // 2. Atualiza ou insere na tabela profiles
+        try {
+          await supabase
+            .from('profiles')
+            .upsert({
+              id: user.id,
+              email: user.email,
+              name: next.name,
+              nome: next.name,
+              phone: next.phone,
+              telefone: next.phone,
+              avatar_url: next.avatar_url,
+              company: next.company,
+              department: next.department,
+              payment_preference: next.payment_preference,
+              role: next.role || 'passenger',
+              status: next.status || 'active',
+              is_approved: next.is_approved !== false
+            });
+        } catch (_) {}
+
+        // 3. Atualiza na tabela passageiros
         try {
           await supabase
             .from('passageiros')
@@ -271,12 +345,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nome_social: next.name?.split(' ')[0],
               telefone: next.phone,
               empresa: next.company,
-              setor: next.department
+              setor: next.department,
+              foto: next.avatar_url,
+              foto_url: next.avatar_url
             })
             .eq('id', user.id);
         } catch (_) {}
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('Erro ao atualizar perfil:', err);
+    }
   };
 
   return (

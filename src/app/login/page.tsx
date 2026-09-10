@@ -7,16 +7,13 @@ import {
   Mail,
   Lock,
   ArrowRight,
-  UserCheck,
-  Sparkles,
   Navigation,
   Globe,
   MessageSquare,
   Clock,
-  ExternalLink,
-  ShieldCheck
+  ExternalLink
 } from 'lucide-react';
-import { Button, Input, Field, Badge } from '@/components/ui';
+import { Button, Input, Field } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { SR_SUPPORT_CONFIG } from '@/types';
 
@@ -84,22 +81,6 @@ export default function LoginPage() {
       window.location.href = '/mapa';
     } catch {
       setErrorMsg('Erro inesperado ao conectar.');
-      setLoading(false);
-    }
-  };
-
-  const handleDemoLogin = async () => {
-    setLoading(true);
-    setErrorMsg(null);
-
-    try {
-      await supabase.auth.signInWithPassword({
-        email: 'passageiro@demo.local',
-        password: 'demo123'
-      });
-      window.location.href = '/mapa';
-    } catch {
-      setErrorMsg('Falha ao entrar como passageiro demo.');
       setLoading(false);
     }
   };
@@ -204,27 +185,6 @@ export default function LoginPage() {
             {loading ? 'Entrando...' : 'Entrar no App'} <ArrowRight size={18} />
           </Button>
         </form>
-
-        {/* Divisor */}
-        <div className="relative my-5 text-center">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200 dark:border-dark-800" />
-          </div>
-          <span className="relative bg-slate-50 dark:bg-dark-950 px-3 text-[10px] font-bold uppercase text-slate-400">
-            Acesso Rápido de Teste
-          </span>
-        </div>
-
-        {/* Botão Acesso Rápido Demo */}
-        <button
-          type="button"
-          onClick={handleDemoLogin}
-          disabled={loading}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-brand/40 bg-brand/10 p-3 text-xs font-black text-slate-900 dark:text-brand hover:bg-brand/20 transition active:scale-98"
-        >
-          <Sparkles size={16} className="text-brand-600 dark:text-brand" />
-          Entrar como Passageiro Aprovado (Demo 1 Clique)
-        </button>
       </div>
 
       {/* Rodapé / Link Cadastro & Site Oficial */}

@@ -69,8 +69,8 @@ export default function PerfilPage() {
   const { profile, updateProfile, signOut } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName] = useState(profile?.name || 'hagy.maia19');
-  const [phone, setPhone] = useState(profile?.phone || '(92) 99123-4567');
+  const [name, setName] = useState(profile?.name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [company, setCompany] = useState(profile?.company || 'SR Logística & Transporte');
   const [department, setDepartment] = useState(profile?.department || 'Operações e Gestão');
   const [paymentPreference, setPaymentPreference] = useState<'PIX' | 'VOUCHER'>(profile?.payment_preference || 'PIX');
@@ -87,6 +87,18 @@ export default function PerfilPage() {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  // Sincroniza os estados com os dados reais do perfil quando carregados
+  useEffect(() => {
+    if (profile) {
+      if (profile.name) setName(profile.name);
+      if (profile.phone) setPhone(profile.phone);
+      if (profile.company) setCompany(profile.company);
+      if (profile.department) setDepartment(profile.department);
+      if (profile.payment_preference) setPaymentPreference(profile.payment_preference);
+      if (profile.avatar_url) setAvatarUrl(profile.avatar_url);
+    }
+  }, [profile]);
 
   // Escuta evento do Android para instalação direta do aplicativo
   useEffect(() => {
@@ -120,6 +132,7 @@ export default function PerfilPage() {
 
     if (!file.type.startsWith('image/')) {
       alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP).');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
@@ -132,7 +145,7 @@ export default function PerfilPage() {
         img.src = event.target?.result as string;
         img.onload = async () => {
           const canvas = document.createElement('canvas');
-          const MAX_SIZE = 400;
+          const MAX_SIZE = 350;
           let width = img.width;
           let height = img.height;
 
@@ -153,19 +166,21 @@ export default function PerfilPage() {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+            const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.82);
             setAvatarUrl(optimizedBase64);
             await updateProfile({ avatar_url: optimizedBase64 });
             setIsAvatarModalOpen(false);
             setSavedSuccess(true);
             setTimeout(() => setSavedSuccess(false), 2500);
           }
+          if (fileInputRef.current) fileInputRef.current.value = '';
           setIsUploadingPhoto(false);
         };
       };
       reader.readAsDataURL(file);
     } catch (err) {
       console.error('Erro ao processar imagem:', err);
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setIsUploadingPhoto(false);
     }
   };
