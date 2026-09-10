@@ -65,6 +65,19 @@ export default function HomePage() {
 
   const nextScheduledTrip = scheduledTrips.length > 0 ? scheduledTrips[0] : null;
 
+  if (loading) {
+    return (
+      <div className="flex min-h-dvh flex-col items-center justify-center p-6 bg-slate-50 dark:bg-dark-950">
+        <div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin mb-3" />
+        <p className="text-xs font-bold text-slate-500 dark:text-slate-400">Carregando SR Logística...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
   return (
     <div className="flex flex-col min-h-dvh p-5 space-y-5 pb-24">
       {/* Header com Saudação do Passageiro */}

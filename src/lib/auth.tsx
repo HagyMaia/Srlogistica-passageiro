@@ -275,7 +275,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         localStorage.removeItem('sr-passenger-active-trip');
       } catch (_) {}
-      window.location.href = '/login';
+      window.location.href = '/welcome';
     }
   };
 

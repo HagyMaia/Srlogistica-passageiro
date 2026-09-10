@@ -1,8 +1,8 @@
-﻿{
+{
   "name": "SR Logística - App do Passageiro",
   "short_name": "SR Passageiro",
   "description": "Aplicativo de transporte e rotas corporativas da SR Logística & Transporte.",
-  "start_url": "/",
+  "start_url": "/welcome",
   "display": "standalone",
   "background_color": "#0B1220",
   "theme_color": "#FFC800",

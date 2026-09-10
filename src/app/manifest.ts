@@ -1,11 +1,11 @@
-﻿import type { MetadataRoute } from 'next';
+import type { MetadataRoute } from 'next';
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'SR Logística - App do Passageiro',
     short_name: 'SR Passageiro',
     description: 'Aplicativo de transporte e rotas corporativas da SR Logística & Transporte.',
-    start_url: '/',
+    start_url: '/welcome',
     display: 'standalone',
     background_color: '#0B1220',
     theme_color: '#FFC800',
