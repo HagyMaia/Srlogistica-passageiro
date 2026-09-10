@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "app.vercel.srlogpassageiro.twa",
+        "sha256_cert_fingerprints": ["12:E8:89:14:71:56:BD:F3:AF:42:0B:57:7B:A8:BA:CA:3F:DC:D9:10:EB:36:E4:08:1E:54:4E:AF:A1:C1:9E:55"]
+      }
+    }]
