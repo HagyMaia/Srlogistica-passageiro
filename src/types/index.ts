@@ -15,12 +15,14 @@ export interface PassengerProfile {
   email: string;
   phone?: string;
   avatar_url?: string;
-  role: 'passenger';
+  role: 'passenger' | 'driver' | 'admin';
   rating?: number;
   total_rides?: number;
   payment_preference?: 'PIX' | 'VOUCHER';
   corporate_company?: string;
+  company?: string;
   cost_center?: string;
+  department?: string;
   status?: AccountStatus;
   is_approved?: boolean;
   approved_at?: string;

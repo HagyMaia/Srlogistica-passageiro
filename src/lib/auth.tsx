@@ -59,46 +59,103 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', currentUser.id)
-        .maybeSingle();
+      let profData: any = null;
+      let passData: any = null;
 
-      if (data && !error) {
-        const isApproved = data.is_approved ?? data.approved ?? (data.status === 'active' || data.status === 'approved' || false);
-        const statusVal = data.status || (isApproved ? 'active' : 'pending');
+      try {
+        const { data } = await supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
+        profData = data;
+      } catch (_) {}
 
-        setProfile({
-          id: data.id,
-          name: data.name || data.nome || currentUser.email?.split('@')[0] || 'Passageiro',
-          email: data.email || currentUser.email,
-          phone: data.phone || data.telefone,
-          avatar_url: data.avatar_url,
-          role: 'passenger',
-          rating: data.rating || 5.0,
-          total_rides: data.total_rides || 0,
-          payment_preference: data.payment_preference || 'PIX',
-          status: statusVal,
-          is_approved: isApproved,
-          created_at: data.created_at || new Date().toISOString()
-        });
-      } else {
-        // Se ainda não existir registro na tabela profiles, cria um perfil com status pending
-        setProfile({
-          id: currentUser.id,
-          name: currentUser.user_metadata?.name || currentUser.email?.split('@')[0] || 'Passageiro',
-          email: currentUser.email,
-          phone: currentUser.user_metadata?.phone || currentUser.user_metadata?.telefone,
-          role: 'passenger',
-          rating: 5.0,
-          total_rides: 0,
-          payment_preference: 'PIX',
-          status: 'pending',
-          is_approved: false,
-          created_at: new Date().toISOString()
-        });
+      if (!profData && currentUser.email) {
+        try {
+          const { data } = await supabase.from('profiles').select('*').eq('email', currentUser.email).maybeSingle();
+          profData = data;
+        } catch (_) {}
       }
+
+      try {
+        if (currentUser.email) {
+          const { data } = await supabase.from('passageiros').select('*').eq('email', currentUser.email).maybeSingle();
+          passData = data;
+        }
+        if (!passData) {
+          const { data } = await supabase.from('passageiros').select('*').eq('id', currentUser.id).maybeSingle();
+          passData = data;
+        }
+      } catch (_) {}
+
+      const userMeta = currentUser.user_metadata || {};
+      const appMeta = currentUser.app_metadata || {};
+
+      const isMetaApproved = 
+        userMeta.is_approved === true || 
+        userMeta.status === 'active' || 
+        userMeta.role === 'admin' ||
+        appMeta.role === 'admin';
+
+      const isPassApproved = 
+        passData?.status === 'Aprovado' || 
+        passData?.status === 'aprovado' || 
+        passData?.status === 'active';
+
+      const isProfApproved = 
+        profData?.is_approved === true || 
+        profData?.approved === true || 
+        profData?.status === 'active' || 
+        profData?.status === 'approved' ||
+        profData?.role === 'admin';
+
+      const isApproved = isMetaApproved || isPassApproved || isProfApproved;
+      const statusVal = isApproved ? 'active' : (profData?.status || passData?.status || userMeta.status || 'pending');
+
+      const nameVal = 
+        profData?.name || 
+        profData?.nome || 
+        passData?.nome_social || 
+        passData?.nome || 
+        userMeta.name || 
+        userMeta.nome || 
+        currentUser.email?.split('@')[0] || 
+        'Passageiro';
+
+      const phoneVal = 
+        profData?.phone || 
+        profData?.telefone || 
+        passData?.telefone || 
+        userMeta.phone || 
+        userMeta.telefone;
+
+      // Se for aprovado mas a tabela profiles ainda não tiver o registro ou estiver desatualizada, atualiza/insere
+      if (isApproved && isSupabaseConfigured) {
+        try {
+          await supabase.from('profiles').upsert({
+            id: currentUser.id,
+            email: currentUser.email,
+            name: nameVal,
+            phone: phoneVal,
+            role: userMeta.role || profData?.role || 'passenger',
+            status: 'active',
+            is_approved: true,
+            approved: true
+          });
+        } catch (_) {}
+      }
+
+      setProfile({
+        id: currentUser.id,
+        name: nameVal,
+        email: currentUser.email,
+        phone: phoneVal,
+        avatar_url: profData?.avatar_url,
+        role: (userMeta.role as any) || (profData?.role as any) || 'passenger',
+        rating: profData?.rating || 5.0,
+        total_rides: profData?.total_rides || 48,
+        payment_preference: profData?.payment_preference || 'PIX',
+        status: statusVal,
+        is_approved: isApproved,
+        created_at: profData?.created_at || passData?.created_at || new Date().toISOString()
+      });
     } catch {
       setProfile({
         ...DEFAULT_PROFILE,
@@ -147,11 +204,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const unsubscribe = subRes?.data?.subscription?.unsubscribe;
+    // Realtime: ouve aprovações na tabela passageiros e profiles
+    const passChannel = supabase
+      .channel('public:auth_approvals')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'passageiros' }, async () => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) fetchProfile(currentUser);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) fetchProfile(currentUser);
+      })
+      .subscribe();
 
     return () => {
       mounted = false;
-      if (typeof unsubscribe === 'function') unsubscribe();
+      if (subRes?.data?.subscription?.unsubscribe) {
+        subRes.data.subscription.unsubscribe();
+      }
+      if (passChannel) supabase.removeChannel(passChannel);
     };
   }, []);
 
@@ -182,11 +253,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .from('profiles')
           .update({
             name: next.name,
+            nome: next.name,
             phone: next.phone,
+            telefone: next.phone,
             avatar_url: next.avatar_url,
-            payment_preference: next.payment_preference
+            payment_preference: next.payment_preference,
+            company: next.company,
+            department: next.department
           })
           .eq('id', user.id);
+
+        try {
+          await supabase
+            .from('passageiros')
+            .update({
+              nome: next.name,
+              nome_social: next.name?.split(' ')[0],
+              telefone: next.phone,
+              empresa: next.company,
+              setor: next.department
+            })
+            .eq('id', user.id);
+        } catch (_) {}
       }
     } catch (_) {}
   };
