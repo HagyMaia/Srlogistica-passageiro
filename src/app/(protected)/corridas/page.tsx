@@ -37,38 +37,7 @@ interface HistoricalRide {
   category?: string;
 }
 
-const SEED_RIDES: HistoricalRide[] = [
-  {
-    id: 'ride-101',
-    pickup: 'Av. Mário Ypiranga, 1300 - Adrianópolis',
-    dropoff: 'Av. Djalma Batista, 482 - Parque 10',
-    fare: 18.50,
-    status: 'COMPLETED',
-    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
-    driver_name: 'Carlos Eduardo da Silva',
-    category: 'SR Pop'
-  },
-  {
-    id: 'ride-102',
-    pickup: 'Rua Salvador, 450 - Adrianópolis',
-    dropoff: 'Av. Santos Dumont, 1350 - Aeroporto',
-    fare: 45.00,
-    status: 'COMPLETED',
-    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    driver_name: 'Marcos Vinicius Ferreira',
-    category: 'SR Confort'
-  },
-  {
-    id: 'ride-103',
-    pickup: 'Praça São Sebastião - Centro',
-    dropoff: 'Av. Coronel Teixeira - Ponta Negra',
-    fare: 32.00,
-    status: 'COMPLETED',
-    created_at: new Date(Date.now() - 86400000 * 9).toISOString(),
-    driver_name: 'Lucas Gabriel Albuquerque',
-    category: 'SR Pop'
-  }
-];
+const SEED_RIDES: HistoricalRide[] = [];
 
 export default function CorridasPage() {
   const { user } = useAuth();

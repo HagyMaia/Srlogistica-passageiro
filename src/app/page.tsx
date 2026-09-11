@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -8,6 +8,7 @@ import {
   MapPin,
   Clock,
   Shield,
+  ShieldCheck,
   Car,
   Package,
   Sparkles,
@@ -19,53 +20,401 @@ import {
   HelpCircle,
   Globe,
   ExternalLink,
-  MessageSquare
+  Crosshair,
+  ArrowRight,
+  ArrowDownUp,
+  X,
+  AlertCircle,
+  QrCode,
+  Building2,
+  Phone,
+  CheckCircle2,
+  Award,
+  Wallet
 } from 'lucide-react';
 import { Button, Card, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
-import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
-import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { PassengerMapWrapper } from '@/components/map/PassengerMapWrapper';
+import { PassengerSearchingRadar } from '@/components/Ride/PassengerSearchingRadar';
+import { PassengerActiveRideSheet } from '@/components/Ride/PassengerActiveRideSheet';
+import { RideFinishedModal } from '@/components/Ride/RideFinishedModal';
+import { ScheduledSuccessModal } from '@/components/Ride/ScheduledSuccessModal';
 import { SupportModal } from '@/components/SupportModal';
 import { PendingApprovalModal } from '@/components/PendingApprovalModal';
+import { usePassengerLocation } from '@/hooks/usePassengerLocation';
+import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
+import { useRideStatus } from '@/hooks/useRideStatus';
+import { useOnlineDrivers } from '@/hooks/useOnlineDrivers';
+import { searchPlaces, reverseGeocode, PlaceSuggestion } from '@/services/geocoding';
+import { calculateRoute, haversineDistance } from '@/services/routing';
+import { getAvailableCategories, calculateFare } from '@/features/trips/domain/pricing';
+import { formatCurrency, formatDistance, formatDuration, formatDateTime } from '@/lib/utils';
 import { SR_SUPPORT_CONFIG } from '@/types';
+import type { TripCategory, PassengerTrip } from '@/features/trips/domain/passenger-trip.types';
+import type { LocationCoordinates, PaymentMethod } from '@/types';
+
+function getDefaultScheduleTime(): { date: string; time: string } {
+  const d = new Date(Date.now() + 45 * 60 * 1000); // 45 minutos no futuro
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String((Math.ceil(d.getMinutes() / 5) * 5) % 60).padStart(2, '0');
+  return {
+    date: `${year}-${month}-${day}`,
+    time: `${hours}:${minutes}`
+  };
+}
+
+const FAVORITE_DESTINATIONS = [
+  {
+    title: 'Manauara Shopping',
+    subtitle: 'Av. Mário Ypiranga, 1300 - Adrianópolis',
+    coords: { latitude: -3.1037, longitude: -60.0125, address: 'Manauara Shopping (Av. Mário Ypiranga, 1300)' }
+  },
+  {
+    title: 'Aeroporto Eduardo Gomes',
+    subtitle: 'Av. Santos Dumont, 1350 - Tarumã',
+    coords: { latitude: -3.0386, longitude: -60.0497, address: 'Aeroporto Internacional Eduardo Gomes' }
+  },
+  {
+    title: 'Amazonas Shopping',
+    subtitle: 'Av. Djalma Batista, 482 - Parque 10',
+    coords: { latitude: -3.0964, longitude: -60.0238, address: 'Amazonas Shopping (Av. Djalma Batista)' }
+  },
+  {
+    title: 'Ponta Negra',
+    subtitle: 'Av. Coronel Teixeira - Orla Ponta Negra',
+    coords: { latitude: -3.0642, longitude: -60.1009, address: 'Praia de Ponta Negra, Manaus' }
+  },
+  {
+    title: 'Distrito Industrial',
+    subtitle: 'Av. Rodrigo Otávio - Polo Industrial de Manaus',
+    coords: { latitude: -3.1319, longitude: -59.9822, address: 'Distrito Industrial I, Manaus' }
+  }
+];
 
 export default function HomePage() {
-  const { user, profile, loading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
-  const { currentTrip, scheduledTrips, loadScheduledTrips } = usePassengerTripStore();
+  const { location, refreshLocation } = usePassengerLocation();
+  const {
+    currentTrip,
+    origin,
+    destination,
+    selectedCategory,
+    selectedPaymentMethod,
+    routeCoordinates,
+    estimatedDistanceMeters,
+    estimatedDurationSeconds,
+    estimatedFare,
+    scheduledTrips,
+    isCreating,
+    error: storeError,
+    setOrigin,
+    setDestination,
+    swapOriginAndDestination,
+    setSelectedCategory,
+    setSelectedPaymentMethod,
+    setRouteInfo,
+    requestRide,
+    scheduleRide,
+    cancelRide,
+    finishRide,
+    loadScheduledTrips
+  } = usePassengerTripStore();
+
+  useRideStatus();
+
+  // Carrega motoristas reais e online do Supabase
+  const { onlineDrivers, refreshOnlineDrivers } = useOnlineDrivers(location || origin);
+
+  // Estados locais da UI
+  const [searchTarget, setSearchTarget] = useState<'ORIGIN' | 'DESTINATION'>('DESTINATION');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [activeStep, setActiveStep] = useState<'MAP' | 'SELECT_DESTINATION' | 'SELECT_CATEGORY'>('MAP');
+
+  // Modo de Solicitação: Imediato ('NOW') ou Agendado ('SCHEDULE')
+  const [rideMode, setRideMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
+  const defaultSchedule = useMemo(() => getDefaultScheduleTime(), []);
+  const [scheduledDate, setScheduledDate] = useState(defaultSchedule.date);
+  const [scheduledTime, setScheduledTime] = useState(defaultSchedule.time);
+  const [scheduledNotes, setScheduledNotes] = useState('');
+  const [scheduledSuccessTrip, setScheduledSuccessTrip] = useState<PassengerTrip | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+
+  // Modais de Apoio
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
 
   const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
 
+  // Redireciona para /welcome se não autenticado
   useEffect(() => {
-    if (!loading && !user) {
+    if (!authLoading && !user) {
       router.push('/welcome');
     }
-  }, [user, loading, router]);
+  }, [user, authLoading, router]);
 
+  // Carrega agendamentos
   useEffect(() => {
     if (user?.id) {
       loadScheduledTrips(user.id);
     }
   }, [user, loadScheduledTrips]);
 
-  const quickCategories = [
-    { id: 'POPULAR', name: 'SR Pop', desc: 'Carros rápidos', icon: Car, bg: 'bg-amber-500/10 text-amber-600 dark:text-brand' },
-    { id: 'CONFORT', name: 'SR Confort', desc: 'Espaço e ar', icon: Shield, bg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-    { id: 'EXECUTIVO', name: 'SR Executivo', desc: 'Alto padrão', icon: Sparkles, bg: 'bg-amber-500/10 text-amber-700 dark:text-brand' },
-    { id: 'ENTREGA', name: 'SR Entregas', desc: 'Envio rápido', icon: Package, bg: 'bg-purple-500/10 text-purple-600 dark:text-purple-400' },
-  ];
+  // Inicializa origem com a localização do passageiro se não estiver definida
+  useEffect(() => {
+    if (location && !origin) {
+      setOrigin(location);
+    }
+  }, [location, origin, setOrigin]);
 
-  const favoritePlaces = [
-    { title: 'Manauara Shopping', subtitle: 'Adrianópolis, Manaus', time: '12 min' },
-    { title: 'Amazonas Shopping', subtitle: 'Parque 10 de Novembro', time: '15 min' },
-    { title: 'Aeroporto Eduardo Gomes', subtitle: 'Tarumã, Manaus', time: '25 min' },
-  ];
+  // Busca de endereços com debounce
+  useEffect(() => {
+    if (activeStep !== 'SELECT_DESTINATION') return;
 
+    const timer = setTimeout(async () => {
+      const results = await searchPlaces(searchQuery);
+      setSuggestions(results);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, activeStep]);
+
+  // Recalcula rota sempre que origem ou destino mudam
+  const updateRouteCalculation = useCallback(
+    async (origLoc: LocationCoordinates, destLoc: LocationCoordinates) => {
+      const dist = haversineDistance(origLoc.latitude, origLoc.longitude, destLoc.latitude, destLoc.longitude);
+      if (dist < 50) {
+        setRouteInfo({
+          coordinates: [],
+          distanceMeters: 0,
+          durationSeconds: 0,
+          estimatedFare: 0
+        });
+        return;
+      }
+
+      try {
+        const route = await calculateRoute(origLoc, destLoc);
+        const fare = calculateFare({
+          distanceMeters: route.distanceMeters,
+          durationSeconds: route.durationSeconds,
+          category: selectedCategory
+        });
+
+        setRouteInfo({
+          coordinates: route.coordinates,
+          distanceMeters: route.distanceMeters,
+          durationSeconds: route.durationSeconds,
+          estimatedFare: fare.totalFare
+        });
+      } catch (err) {
+        console.warn('Erro ao calcular rota:', err);
+      }
+    },
+    [selectedCategory, setRouteInfo]
+  );
+
+  // Seleciona um local das sugestões
+  const handleSelectPlace = async (place: PlaceSuggestion) => {
+    setIsSearching(true);
+    const selectedCoords = place.coordinates;
+
+    if (searchTarget === 'ORIGIN') {
+      setOrigin(selectedCoords);
+      if (destination) {
+        await updateRouteCalculation(selectedCoords, destination);
+        setActiveStep('SELECT_CATEGORY');
+      } else {
+        setSearchTarget('DESTINATION');
+        setSearchQuery('');
+      }
+    } else {
+      setDestination(selectedCoords);
+      const currentOrigin = origin || location;
+      if (currentOrigin) {
+        await updateRouteCalculation(currentOrigin, selectedCoords);
+      }
+      setActiveStep('SELECT_CATEGORY');
+    }
+
+    setIsSearching(false);
+  };
+
+  // Seleciona um destino favorito rápido
+  const handleSelectQuickFavorite = async (fav: (typeof FAVORITE_DESTINATIONS)[0]) => {
+    const destCoords: LocationCoordinates = {
+      latitude: fav.coords.latitude,
+      longitude: fav.coords.longitude,
+      address: fav.coords.address
+    };
+    setDestination(destCoords);
+    const currentOrigin = origin || location;
+    if (currentOrigin) {
+      await updateRouteCalculation(currentOrigin, destCoords);
+    }
+    setActiveStep('SELECT_CATEGORY');
+  };
+
+  // Usar GPS atual como Origem
+  const handleUseCurrentLocationAsOrigin = async () => {
+    if (location) {
+      setOrigin(location);
+      if (destination) {
+        await updateRouteCalculation(location, destination);
+        setActiveStep('SELECT_CATEGORY');
+      } else {
+        setSearchTarget('DESTINATION');
+        setSearchQuery('');
+      }
+    } else {
+      refreshLocation();
+    }
+  };
+
+  // Inverter Origem e Destino
+  const handleSwapLocations = async () => {
+    if (origin && destination) {
+      swapOriginAndDestination();
+      await updateRouteCalculation(destination, origin);
+    }
+  };
+
+  // Clique no mapa para selecionar ponto
+  const handleMapClick = useCallback(
+    async ([lat, lng]: [number, number]) => {
+      if (currentTrip && currentTrip.status !== 'IDLE') return;
+
+      const geo = await reverseGeocode(lat, lng);
+      const clickedPlace: PlaceSuggestion = {
+        id: `custom-point-${Date.now()}`,
+        title: geo.address || 'Ponto no Mapa',
+        subtitle: `${geo.neighborhood || 'Manaus'}`,
+        coordinates: geo
+      };
+
+      if (activeStep === 'SELECT_DESTINATION') {
+        handleSelectPlace(clickedPlace);
+      } else if (!destination) {
+        setSearchTarget('DESTINATION');
+        handleSelectPlace(clickedPlace);
+      }
+    },
+    [currentTrip, destination, activeStep, origin, location]
+  );
+
+  // Lista de categorias de corrida com tarifas calculadas
+  const availableCategories = useMemo(() => {
+    return getAvailableCategories({
+      distanceMeters: estimatedDistanceMeters || 4500,
+      durationSeconds: estimatedDurationSeconds || 600
+    });
+  }, [estimatedDistanceMeters, estimatedDurationSeconds]);
+
+  // Verifica se origem e destino são o mesmo ponto
+  const isSameLocation = useMemo(() => {
+    if (!origin || !destination) return false;
+    const dist = haversineDistance(origin.latitude, origin.longitude, destination.latitude, destination.longitude);
+    const sameAddress =
+      origin.address &&
+      destination.address &&
+      origin.address.trim().toLowerCase() === destination.address.trim().toLowerCase();
+    return dist < 50 || Boolean(sameAddress);
+  }, [origin, destination]);
+
+  // Validação do agendamento
+  const validateScheduledDateTime = () => {
+    if (rideMode !== 'SCHEDULE') return true;
+    try {
+      const selected = new Date(`${scheduledDate}T${scheduledTime}:00`);
+      const now = new Date();
+      const diffMinutes = (selected.getTime() - now.getTime()) / (1000 * 60);
+
+      if (isNaN(selected.getTime())) {
+        setScheduleError('Por favor, informe uma data e hora válidas.');
+        return false;
+      }
+
+      if (diffMinutes < 15) {
+        setScheduleError('O agendamento precisa ser feito com no mínimo 15 minutos de antecedência.');
+        return false;
+      }
+
+      setScheduleError(null);
+      return true;
+    } catch {
+      setScheduleError('Data e hora inválidas.');
+      return false;
+    }
+  };
+
+  // Dispara solicitação (imediata ou agendada)
+  const handleSubmitRide = async () => {
+    if (isSameLocation) return;
+
+    if (!isApproved) {
+      setIsPendingModalOpen(true);
+      return;
+    }
+
+    const passengerData = {
+      id: profile?.id || user?.id || 'demo-passenger',
+      name: profile?.name || 'Passageiro SR',
+      phone: profile?.phone || '(92) 99123-4567'
+    };
+
+    if (rideMode === 'SCHEDULE') {
+      if (!validateScheduledDateTime()) return;
+      const scheduledDateTimeISO = new Date(`${scheduledDate}T${scheduledTime}:00`).toISOString();
+      const scheduledTrip = await scheduleRide(passengerData, scheduledDateTimeISO, scheduledNotes);
+      if (scheduledTrip) {
+        setScheduledSuccessTrip(scheduledTrip);
+        setActiveStep('MAP');
+      }
+    } else {
+      await requestRide(passengerData);
+      setActiveStep('MAP');
+    }
+  };
+
+  const getCategoryIcon = (icon: string) => {
+    switch (icon) {
+      case 'car':
+        return <Car size={22} />;
+      case 'shield-check':
+        return <ShieldCheck size={22} />;
+      case 'sparkles':
+        return <Sparkles size={22} />;
+      case 'package':
+        return <Package size={22} />;
+      default:
+        return <Car size={22} />;
+    }
+  };
+
+  const getCategoryTitle = (cat: TripCategory) => {
+    switch (cat) {
+      case 'POPULAR':
+        return 'SR Pop';
+      case 'CONFORT':
+        return 'SR Confort';
+      case 'EXECUTIVO':
+        return 'SR Executivo';
+      case 'ENTREGA':
+        return 'SR Entrega';
+      default:
+        return 'SR Pop';
+    }
+  };
+
+  const todayDateString = new Date().toISOString().split('T')[0];
   const nextScheduledTrip = scheduledTrips.length > 0 ? scheduledTrips[0] : null;
 
-  if (loading) {
+  if (authLoading) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center p-6 bg-slate-50 dark:bg-dark-950">
         <div className="h-10 w-10 rounded-full border-4 border-brand border-t-transparent animate-spin mb-3" />
@@ -79,242 +428,720 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col min-h-dvh p-5 space-y-5 pb-24">
-      {/* Header com Saudação do Passageiro */}
-      <div className="flex items-center justify-between pt-4">
-        <div>
-          <span className="text-xs font-semibold text-slate-400">Olá, bem-vindo(a) 👋</span>
-          <h1 className="text-xl font-black text-slate-900 dark:text-white">
-            {profile?.name || 'Passageiro SR'}
-          </h1>
-        </div>
+    <div className="relative flex flex-col h-dvh w-full overflow-hidden bg-slate-100 dark:bg-dark-950">
+      {/* MAPA INTERATIVO PRINCIPAL AO VIVO */}
+      <div className="absolute inset-0 z-0">
+        <PassengerMapWrapper
+          origin={origin || location}
+          destination={destination}
+          routeCoordinates={routeCoordinates}
+          driver={currentTrip?.driver}
+          nearbyDrivers={onlineDrivers}
+          onMapClick={handleMapClick}
+          className="w-full h-full"
+        />
+      </div>
 
+      {/* HEADER EXECUTIVO FLUTUANTE SUPERIOR */}
+      <div className="absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
+        {/* Card do Usuário + Indicador de Motoristas Online */}
         <Link
           href="/perfil"
-          className="flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-dark-800 p-2 pr-3 border border-slate-200 dark:border-dark-700 transition hover:scale-105"
+          className="pointer-events-auto flex items-center gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-2 pr-3.5 shadow-2xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl transition hover:scale-[1.02] active:scale-95"
         >
-          <img
-            src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
-            alt="Avatar"
-            className="h-8 w-8 rounded-full object-cover border border-brand"
+          <div className="relative">
+            <img
+              src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
+              alt="Avatar"
+              className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
+            />
+            <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-white dark:border-dark-900" />
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1">
+              <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
+                {profile?.name?.split(' ')[0] || 'Passageiro'}
+              </span>
+              <span className="text-[10px] font-bold text-amber-500 flex items-center">
+                ★ {profile?.rating || 4.98}
+              </span>
+            </div>
+            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+              {onlineDrivers.length > 0 ? `${onlineDrivers.length} motorista(s) online` : 'SR Logística'}
+            </span>
+          </div>
+        </Link>
+
+        {/* Botões de Ação Rápida: Ajuda e GPS */}
+        <div className="pointer-events-auto flex items-center gap-2">
+          <button
+            onClick={() => setIsSupportOpen(true)}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"
+            title="Central de Ajuda & WhatsApp 24h"
+          >
+            <HelpCircle size={18} className="text-blue-500" />
+          </button>
+
+          <button
+            onClick={refreshLocation}
+            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"
+            title="Centralizar GPS"
+          >
+            <Crosshair size={18} className="text-brand-600 dark:text-brand" />
+          </button>
+        </div>
+      </div>
+
+      {/* PAINEL INFERIOR INTERATIVO E INTELIGENTE */}
+      <div className="absolute bottom-16 inset-x-3 z-30 flex flex-col gap-2.5 max-w-lg mx-auto w-full">
+        {/* CASO 1: Em busca de motorista (Radar em Tempo Real) */}
+        {currentTrip && currentTrip.status === 'SEARCHING_DRIVER' && (
+          <PassengerSearchingRadar
+            trip={currentTrip}
+            onCancel={() => cancelRide('Cancelado pelo usuário')}
           />
-          <div className="text-left">
-            <span className="text-[10px] font-bold text-slate-400 block">Sua nota</span>
-            <span className="text-xs font-black text-slate-900 dark:text-brand">★ {profile?.rating || 4.95}</span>
-          </div>
-        </Link>
-      </div>
+        )}
 
-      {/* Alerta de Cadastro Pendente no Admin (se não aprovado) */}
-      {!isApproved && (
-        <button
-          onClick={() => setIsPendingModalOpen(true)}
-          className="w-full flex items-center justify-between rounded-3xl bg-amber-500/15 border border-amber-500/30 p-4 text-left text-slate-900 dark:text-white transition hover:scale-[1.01]"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-dark-950 font-black">
-              <Clock size={20} />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">
-                Aprovação Pendente no Painel Admin
-              </span>
-              <span className="text-xs font-black">
-                Toque para agilizar liberação via WhatsApp ➔
-              </span>
-            </div>
-          </div>
-          <ChevronRight size={18} className="text-amber-600 dark:text-amber-400 shrink-0" />
-        </button>
-      )}
+        {/* CASO 2: Motorista Designado / A Caminho / Em Rota (100% Real) */}
+        {currentTrip &&
+          ['DRIVER_ASSIGNED', 'DRIVER_ARRIVING', 'DRIVER_ARRIVED', 'IN_PROGRESS'].includes(
+            currentTrip.status
+          ) && (
+            <PassengerActiveRideSheet
+              trip={currentTrip}
+              onCancel={() => cancelRide('Cancelado pelo usuário')}
+            />
+          )}
 
-      {/* Alerta de Corrida Ativa (se houver) */}
-      {currentTrip && currentTrip.status !== 'IDLE' && (
-        <Link
-          href="/mapa"
-          className="flex items-center justify-between rounded-3xl bg-brand p-4 text-dark-950 font-black shadow-lg shadow-brand/30 animate-pulse"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-dark-950 text-brand">
-              <Navigation size={20} />
-            </div>
-            <div>
-              <span className="text-[10px] font-black uppercase tracking-wider block">Você tem uma viagem em andamento</span>
-              <span className="text-xs font-black">Toque para ver o motorista no mapa ➔</span>
-            </div>
-          </div>
-          <ChevronRight size={20} />
-        </Link>
-      )}
+        {/* CASO 3: Sem corrida em andamento -> HUB PRINCIPAL DE SOLICITAÇÃO & DESTINOS */}
+        {(!currentTrip || currentTrip.status === 'IDLE') && (
+          <>
+            {/* ETAPA A: DASHBOARD INICIAL PROFISSIONAL */}
+            {activeStep === 'MAP' && (
+              <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white/95 dark:bg-dark-900/95 backdrop-blur-xl p-4 shadow-2xl space-y-3">
+                {/* Alerta de Aprovação Pendente se aplicável */}
+                {!isApproved && (
+                  <button
+                    onClick={() => setIsPendingModalOpen(true)}
+                    className="w-full flex items-center justify-between rounded-2xl bg-amber-500/15 border border-amber-500/30 p-2.5 text-left text-slate-900 dark:text-white transition hover:scale-[1.01]"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-dark-950 font-black">
+                        <Clock size={15} />
+                      </div>
+                      <div className="min-w-0">
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">
+                          Cadastro em Análise no Admin
+                        </span>
+                        <span className="text-xs font-bold truncate block">
+                          Toque para agilizar liberação ➔
+                        </span>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-amber-600 shrink-0" />
+                  </button>
+                )}
 
-      {/* Alerta de Próxima Corrida Agendada (se houver) */}
-      {nextScheduledTrip && (!currentTrip || currentTrip.status === 'IDLE') && (
-        <Link
-          href="/corridas"
-          className="flex items-center justify-between rounded-3xl bg-amber-500/15 border border-amber-500/30 p-3.5 text-slate-900 dark:text-white transition hover:scale-[1.01]"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500 text-dark-950 font-black">
-              <CalendarCheck size={20} />
-            </div>
-            <div>
-              <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider block">
-                Viagem Agendada
-              </span>
-              <span className="text-xs font-black">
-                {nextScheduledTrip.scheduledFor ? formatDateTime(nextScheduledTrip.scheduledFor) : 'Em breve'}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 text-xs font-bold text-amber-700 dark:text-amber-400">
-            <span>Ver</span>
-            <ChevronRight size={16} />
-          </div>
-        </Link>
-      )}
+                {/* Card de Próxima Viagem Agendada (se houver) */}
+                {nextScheduledTrip && (
+                  <Link
+                    href="/corridas"
+                    className="flex items-center justify-between rounded-2xl bg-brand/10 border border-brand/30 p-2.5 text-slate-900 dark:text-white transition hover:scale-[1.01]"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-xl bg-brand text-dark-950 font-black">
+                        <CalendarCheck size={15} />
+                      </div>
+                      <div>
+                        <span className="text-[10px] font-black uppercase text-brand-700 dark:text-brand block">
+                          Corrida Agendada
+                        </span>
+                        <span className="text-xs font-bold">
+                          {nextScheduledTrip.scheduledFor ? formatDateTime(nextScheduledTrip.scheduledFor) : 'Programada'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[11px] font-black text-brand-700 dark:text-brand">
+                      <span>Ver</span>
+                      <ChevronRight size={14} />
+                    </div>
+                  </Link>
+                )}
 
-      {/* Caixa de Busca Principal (Solicitar Imediata) */}
-      <Link
-        href="/mapa"
-        className="flex items-center gap-3 rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-xl transition hover:border-brand/50 group"
-      >
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand text-dark-950 font-black shadow-md shadow-brand/25 group-hover:scale-105 transition">
-          <Search size={22} />
-        </div>
-        <div className="flex-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SR Logística</span>
-          <h3 className="text-base font-black text-slate-900 dark:text-white">Para onde vamos agora?</h3>
-          <p className="text-xs text-slate-400">Toque para selecionar seu destino</p>
-        </div>
-      </Link>
+                {/* Seletor de Modo: Agora vs Agendar */}
+                <div className="flex rounded-2xl bg-slate-100 dark:bg-dark-950 p-1 border border-slate-200/60 dark:border-dark-800">
+                  <button
+                    onClick={() => setRideMode('NOW')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-black transition ${
+                      rideMode === 'NOW'
+                        ? 'bg-brand text-dark-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <Car size={16} />
+                    <span>Solicitar Agora</span>
+                  </button>
 
-      {/* Botão de Destaque: Solicitar Corrida Agendada */}
-      <Link
-        href="/mapa?mode=schedule"
-        className="flex items-center justify-between rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-gradient-to-r from-amber-500/10 via-brand/10 to-transparent p-4 shadow-sm transition hover:border-brand/50 hover:scale-[1.01]"
-      >
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-500/20 text-amber-600 dark:text-brand font-black border border-amber-500/30">
-            <Calendar size={20} />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h4 className="text-xs font-black text-slate-900 dark:text-white">Solicitar Corrida Agendada</h4>
-              <Badge className="bg-brand text-dark-950 text-[9px] font-black px-1.5 py-0.2">Novo</Badge>
-            </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Programe viagens com data e hora marcada para aeroportos e reuniões
-            </p>
-          </div>
-        </div>
-        <ChevronRight size={18} className="text-slate-400 shrink-0 ml-2" />
-      </Link>
-
-      {/* Serviços / Categorias Rápidas */}
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Serviços Disponíveis</h3>
-        <div className="grid grid-cols-2 gap-3">
-          {quickCategories.map((cat) => {
-            const Icon = cat.icon;
-            return (
-              <Link
-                key={cat.id}
-                href="/mapa"
-                className="flex items-center gap-3 rounded-2xl border border-slate-200/80 dark:border-dark-700/60 bg-white dark:bg-dark-800 p-3.5 shadow-sm transition hover:scale-[1.02] hover:border-brand/40"
-              >
-                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${cat.bg}`}>
-                  <Icon size={22} />
+                  <button
+                    onClick={() => setRideMode('SCHEDULE')}
+                    className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-black transition ${
+                      rideMode === 'SCHEDULE'
+                        ? 'bg-brand text-dark-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                    }`}
+                  >
+                    <Calendar size={16} />
+                    <span>Agendar Viagem</span>
+                  </button>
                 </div>
-                <div>
-                  <h4 className="text-xs font-black text-slate-900 dark:text-white">{cat.name}</h4>
-                  <p className="text-[10px] text-slate-400">{cat.desc}</p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      </div>
 
-      {/* Destinos Recentes / Favoritos */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Destinos Recentes</h3>
-          <Link href="/mapa" className="text-xs font-bold text-brand-700 dark:text-brand hover:underline">
-            Ver mapa
-          </Link>
-        </div>
+                {/* Bloco de Rota Interativa: Ponto de Embarque e Destino */}
+                <div className="space-y-2 rounded-2xl bg-slate-50 dark:bg-dark-800/80 p-3 border border-slate-200/60 dark:border-dark-700/60">
+                  {/* Linha 1: Embarque (De) */}
+                  <div
+                    onClick={() => {
+                      setSearchTarget('ORIGIN');
+                      setSearchQuery('');
+                      setActiveStep('SELECT_DESTINATION');
+                    }}
+                    className="flex items-center justify-between cursor-pointer group py-0.5"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-xs">
+                        <MapPin size={15} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Ponto de Embarque (De)
+                        </span>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {origin?.address || 'Definir local de embarque...'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-black text-brand-700 dark:text-brand group-hover:underline shrink-0 ml-2">
+                      Alterar
+                    </span>
+                  </div>
 
-        <div className="space-y-2">
-          {favoritePlaces.map((place, idx) => (
-            <Link
-              key={idx}
-              href="/mapa"
-              className="flex items-center justify-between rounded-2xl border border-slate-200/70 dark:border-dark-700/50 bg-white dark:bg-dark-800/80 p-3.5 transition hover:bg-slate-50 dark:hover:bg-dark-750"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-dark-700 text-slate-500 dark:text-slate-300">
-                  <MapPin size={18} />
+                  <div className="border-t border-slate-200/60 dark:border-dark-700/60" />
+
+                  {/* Linha 2: Destino (Para) */}
+                  <div
+                    onClick={() => {
+                      setSearchTarget('DESTINATION');
+                      setSearchQuery('');
+                      setActiveStep('SELECT_DESTINATION');
+                    }}
+                    className="flex items-center justify-between cursor-pointer group py-0.5"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/20 text-brand-700 dark:text-brand font-black text-xs">
+                        <Navigation size={15} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Ponto de Destino (Para)
+                        </span>
+                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {destination?.address || 'Para onde vamos hoje?'}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-black text-brand-700 dark:text-brand group-hover:underline shrink-0 ml-2">
+                      {destination ? 'Alterar' : 'Escolher'}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white">{place.title}</h4>
-                  <p className="text-[11px] text-slate-400">{place.subtitle}</p>
+
+                {/* Atalhos Rápidos de Destinos em Manaus (1-Tap Fast Fill) */}
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                    Destinos Rápidos
+                  </span>
+                  <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                    {FAVORITE_DESTINATIONS.map((fav, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSelectQuickFavorite(fav)}
+                        className="flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-slate-100 dark:bg-dark-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-brand border border-slate-200/70 dark:border-dark-700 transition active:scale-95 shrink-0"
+                      >
+                        <MapPin size={12} className="text-brand" />
+                        <span>{fav.title}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Botão de Ação Principal */}
+                <Button
+                  variant="primary"
+                  size="lg"
+                  full
+                  onClick={() => {
+                    if (destination && origin && !isSameLocation) {
+                      setActiveStep('SELECT_CATEGORY');
+                    } else {
+                      setSearchTarget('DESTINATION');
+                      setSearchQuery('');
+                      setActiveStep('SELECT_DESTINATION');
+                    }
+                  }}
+                >
+                  <Search size={18} />
+                  <span>{destination ? 'Ver Preços e Categorias' : 'Buscar Destino'}</span>
+                </Button>
+              </div>
+            )}
+
+            {/* ETAPA B: DRAWER DE BUSCA DE ENDEREÇOS (EMBARQUE OU DESTINO) */}
+            {activeStep === 'SELECT_DESTINATION' && (
+              <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 p-4 shadow-2xl max-h-[80vh] overflow-y-auto space-y-3.5">
+                {/* Header de Troca: Embarque vs Destino */}
+                <div className="flex items-center justify-between">
+                  <div className="flex rounded-xl bg-slate-100 dark:bg-dark-950 p-1 border border-slate-200/60 dark:border-dark-800">
+                    <button
+                      onClick={() => {
+                        setSearchTarget('ORIGIN');
+                        setSearchQuery('');
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition ${
+                        searchTarget === 'ORIGIN'
+                          ? 'bg-emerald-500 text-white shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <MapPin size={13} />
+                      <span>Embarque (De)</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setSearchTarget('DESTINATION');
+                        setSearchQuery('');
+                      }}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition ${
+                        searchTarget === 'DESTINATION'
+                          ? 'bg-brand text-dark-950 shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Navigation size={13} />
+                      <span>Destino (Para)</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    {origin && destination && (
+                      <button
+                        onClick={handleSwapLocations}
+                        className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-dark-800 text-slate-700 dark:text-slate-200 hover:text-brand transition active:scale-95"
+                        title="Inverter Origem e Destino"
+                      >
+                        <ArrowDownUp size={16} />
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => setActiveStep(destination ? 'SELECT_CATEGORY' : 'MAP')}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 dark:bg-dark-800 text-slate-400 hover:text-white transition"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Input de Pesquisa */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={
+                      searchTarget === 'ORIGIN'
+                        ? 'Digite o ponto de embarque (rua, prédio, shopping)...'
+                        : 'Digite o destino (shopping, aeroporto, bairro)...'
+                    }
+                    className="w-full rounded-2xl border border-slate-300 dark:border-dark-700 bg-slate-50 dark:bg-dark-950 px-4 py-3 pl-10 text-xs font-bold outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 text-slate-900 dark:text-white placeholder:text-slate-400 placeholder:font-normal"
+                  />
+                  <Search className="absolute left-3.5 top-3 text-slate-400" size={16} />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-3.5 top-3 text-slate-400 hover:text-slate-200"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Botão Usar GPS atual para Embarque */}
+                {searchTarget === 'ORIGIN' && (
+                  <button
+                    onClick={handleUseCurrentLocationAsOrigin}
+                    className="w-full flex items-center gap-2.5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 p-2.5 text-left text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 transition active:scale-[0.99]"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white">
+                      <Crosshair size={16} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black">Usar Minha Localização Atual (GPS)</h4>
+                      <p className="text-[10px] opacity-80 truncate">
+                        {location?.address || 'Detectar posição pelo GPS'}
+                      </p>
+                    </div>
+                  </button>
+                )}
+
+                {/* Sugestões de Lugares */}
+                <div className="space-y-1 pt-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                    Sugestões em Manaus
+                  </span>
+                  {suggestions.map((place) => (
+                    <button
+                      key={place.id}
+                      onClick={() => handleSelectPlace(place)}
+                      className="w-full flex items-start gap-3 rounded-2xl p-2.5 text-left transition border border-transparent hover:border-brand/30 hover:bg-brand/10 dark:hover:bg-dark-800"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-dark-800 text-brand-600 dark:text-brand mt-0.5">
+                        <MapPin size={16} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                          {place.title}
+                        </h4>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                          {place.subtitle}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
+            )}
 
-              <span className="text-[11px] font-semibold text-slate-400">{place.time}</span>
-            </Link>
-          ))}
-        </div>
+            {/* ETAPA C: ESCOLHA DE CATEGORIAS, VALORES, AGENDAMENTO & CONFIRMAÇÃO */}
+            {activeStep === 'SELECT_CATEGORY' && (
+              <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 p-4 shadow-2xl space-y-3.5 max-h-[82vh] overflow-y-auto">
+                {/* Resumo da Rota Editável */}
+                <div className="rounded-2xl bg-slate-50 dark:bg-dark-950/70 p-3 border border-slate-200/80 dark:border-dark-800 space-y-2.5">
+                  {/* Ponto de Embarque */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white font-black text-[10px]">
+                        ●
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Ponto de Embarque (De)
+                        </span>
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                          {origin?.address || `${origin?.latitude}, ${origin?.longitude}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSearchTarget('ORIGIN');
+                        setSearchQuery('');
+                        setActiveStep('SELECT_DESTINATION');
+                      }}
+                      className="text-xs font-black text-emerald-600 dark:text-emerald-400 hover:underline shrink-0 ml-2"
+                    >
+                      Alterar
+                    </button>
+                  </div>
+
+                  {/* Divisor com Botão de Inverter */}
+                  <div className="flex items-center justify-between px-1">
+                    <div className="h-px bg-slate-200 dark:bg-dark-800 flex-1" />
+                    <button
+                      onClick={handleSwapLocations}
+                      className="mx-2 flex items-center gap-1 rounded-full bg-slate-200 dark:bg-dark-800 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:text-slate-300 hover:text-brand hover:border-brand border border-slate-300 dark:border-dark-700 transition active:scale-95"
+                      title="Inverter Embarque e Destino"
+                    >
+                      <ArrowDownUp size={11} />
+                      <span>Inverter</span>
+                    </button>
+                    <div className="h-px bg-slate-200 dark:bg-dark-800 flex-1" />
+                  </div>
+
+                  {/* Ponto de Destino */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-dark-950 font-black text-[10px]">
+                        🏁
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                          Ponto de Destino (Para)
+                        </span>
+                        <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                          {destination?.address || `${destination?.latitude}, ${destination?.longitude}`}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setSearchTarget('DESTINATION');
+                        setSearchQuery('');
+                        setActiveStep('SELECT_DESTINATION');
+                      }}
+                      className="text-xs font-black text-brand-700 dark:text-brand hover:underline shrink-0 ml-2"
+                    >
+                      Alterar
+                    </button>
+                  </div>
+
+                  {/* Detalhes de Rota */}
+                  {!isSameLocation && estimatedDistanceMeters > 0 && (
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-dark-800 text-xs font-bold text-slate-600 dark:text-slate-300">
+                      <span>Distância: {formatDistance(estimatedDistanceMeters)}</span>
+                      <span>•</span>
+                      <span>Tempo estimado: {formatDuration(estimatedDurationSeconds)}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* ALERTA: Origem e Destino Iguais */}
+                {isSameLocation && (
+                  <div className="rounded-2xl bg-amber-500/15 border border-amber-500/40 p-3 flex items-start gap-2.5 text-amber-900 dark:text-amber-200">
+                    <AlertCircle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                    <div className="flex-1 text-xs">
+                      <p className="font-bold">Embarque e Destino são iguais!</p>
+                      <p className="text-[11px] opacity-90 mt-0.5">
+                        Por favor, selecione um destino diferente para calcular a rota e solicitar.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Seletor de Modo na Confirmação: Agora vs Agendar */}
+                <div className="flex rounded-2xl bg-slate-100 dark:bg-dark-950 p-1 border border-slate-200/60 dark:border-dark-800">
+                  <button
+                    onClick={() => {
+                      setRideMode('NOW');
+                      setScheduleError(null);
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                      rideMode === 'NOW'
+                        ? 'bg-brand text-dark-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <Car size={15} />
+                    <span>Agora</span>
+                  </button>
+
+                  <button
+                    onClick={() => setRideMode('SCHEDULE')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-xl text-xs font-bold transition ${
+                      rideMode === 'SCHEDULE'
+                        ? 'bg-brand text-dark-950 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <Calendar size={15} />
+                    <span>Agendar Corrida</span>
+                  </button>
+                </div>
+
+                {/* Bloco de Agendamento (se modo agendar) */}
+                {rideMode === 'SCHEDULE' && (
+                  <div className="rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/30 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900 dark:text-brand">
+                        <Calendar size={15} />
+                        <span>Data & Hora Marcada</span>
+                      </div>
+                      <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[10px]">
+                        Agendamento
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+                          Data
+                        </label>
+                        <input
+                          type="date"
+                          min={todayDateString}
+                          value={scheduledDate}
+                          onChange={(e) => {
+                            setScheduledDate(e.target.value);
+                            setScheduleError(null);
+                          }}
+                          className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-brand"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1">
+                          Horário
+                        </label>
+                        <input
+                          type="time"
+                          value={scheduledTime}
+                          onChange={(e) => {
+                            setScheduledTime(e.target.value);
+                            setScheduleError(null);
+                          }}
+                          className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 px-3 py-2 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-brand"
+                        />
+                      </div>
+                    </div>
+
+                    <input
+                      type="text"
+                      value={scheduledNotes}
+                      onChange={(e) => setScheduledNotes(e.target.value)}
+                      placeholder="Instruções para o motorista (ex: malas, portaria)..."
+                      className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 px-3 py-2 text-xs font-medium text-slate-900 dark:text-white outline-none focus:border-brand placeholder:text-slate-400"
+                    />
+
+                    {scheduleError && (
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                        <AlertCircle size={14} className="shrink-0" />
+                        <span>{scheduleError}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Seleção de Categorias de Veículos */}
+                <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto">
+                  {availableCategories.map((cat) => {
+                    const isSelected = selectedCategory === cat.id;
+                    return (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedCategory(cat.id)}
+                        className={`flex flex-col justify-between rounded-2xl p-2.5 text-left transition border ${
+                          isSelected
+                            ? 'border-brand bg-brand/10 dark:bg-brand/15 shadow-md shadow-brand/10 scale-[1.01]'
+                            : 'border-slate-200/80 dark:border-dark-700/60 bg-slate-50 dark:bg-dark-950/50 hover:border-slate-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between w-full mb-1">
+                          <div
+                            className={`p-1.5 rounded-xl ${
+                              isSelected ? 'bg-brand text-dark-950' : 'bg-slate-200 dark:bg-dark-800 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {getCategoryIcon(cat.icon)}
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-semibold">{cat.etaMinutes} min</span>
+                        </div>
+
+                        <div>
+                          <h4 className="text-xs font-black text-slate-900 dark:text-white">{cat.name}</h4>
+                          <span className="text-sm font-black text-slate-900 dark:text-brand mt-0.5 block">
+                            {formatCurrency(cat.price)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Forma de Pagamento */}
+                <div className="flex flex-col gap-1.5 rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-2.5 border border-slate-100 dark:border-dark-800">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {selectedPaymentMethod === 'PIX' ? (
+                        <QrCode size={18} className="text-emerald-500" />
+                      ) : (
+                        <Building2 size={18} className="text-brand-600 dark:text-brand" />
+                      )}
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                        {selectedPaymentMethod === 'PIX' ? 'PIX Imediato' : 'Voucher Corporativo'}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-1">
+                      {(['PIX', 'VOUCHER'] as PaymentMethod[]).map((pm) => (
+                        <button
+                          key={pm}
+                          type="button"
+                          onClick={() => setSelectedPaymentMethod(pm)}
+                          className={`px-2.5 py-1 rounded-xl text-[10px] font-black transition ${
+                            selectedPaymentMethod === pm
+                              ? 'bg-brand text-dark-950 shadow-sm'
+                              : 'bg-slate-200 dark:bg-dark-800 text-slate-600 dark:text-slate-400'
+                          }`}
+                        >
+                          {pm === 'PIX' ? 'PIX' : '🏢 Voucher'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {storeError && (
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                    <AlertCircle size={14} className="shrink-0" />
+                    <span>{storeError}</span>
+                  </div>
+                )}
+
+                {/* Botão de Solicitação Final */}
+                <Button
+                  variant="primary"
+                  size="xl"
+                  full
+                  disabled={isCreating || isSameLocation}
+                  onClick={handleSubmitRide}
+                >
+                  {isCreating ? (
+                    'Processando solicitação...'
+                  ) : isSameLocation ? (
+                    'Selecione locais diferentes'
+                  ) : rideMode === 'SCHEDULE' ? (
+                    <>
+                      <Calendar size={18} />
+                      Solicitar Corrida Agendada
+                    </>
+                  ) : (
+                    <>
+                      Solicitar {getCategoryTitle(selectedCategory)}
+                      <ArrowRight size={18} />
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Canais de Atendimento & Site Oficial */}
-      <div className="grid grid-cols-2 gap-3">
-        <button
-          onClick={() => setIsSupportOpen(true)}
-          className="flex flex-col justify-between p-3.5 rounded-2xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 text-left shadow-sm hover:scale-[1.02] transition"
-        >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 mb-2">
-            <HelpCircle size={18} />
-          </div>
-          <div>
-            <h4 className="text-xs font-black text-slate-900 dark:text-white">Central de Ajuda</h4>
-            <p className="text-[10px] text-slate-400">WhatsApp & Suporte 24h</p>
-          </div>
-        </button>
+      {/* Modal de Confirmação de Agendamento */}
+      {scheduledSuccessTrip && (
+        <ScheduledSuccessModal
+          trip={scheduledSuccessTrip}
+          onClose={() => setScheduledSuccessTrip(null)}
+        />
+      )}
 
-        <a
-          href={SR_SUPPORT_CONFIG.websiteUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex flex-col justify-between p-3.5 rounded-2xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 text-left shadow-sm hover:scale-[1.02] transition"
-        >
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-500 mb-2">
-            <Globe size={18} />
-          </div>
-          <div>
-            <div className="flex items-center gap-1">
-              <h4 className="text-xs font-black text-slate-900 dark:text-white">Site Oficial</h4>
-              <ExternalLink size={10} className="text-slate-400" />
-            </div>
-            <p className="text-[10px] text-slate-400">SR Logística Manaus</p>
-          </div>
-        </a>
-      </div>
-
-      {/* Banner de Vantagem / Segurança SR */}
-      <div className="rounded-3xl bg-gradient-to-r from-slate-900 to-dark-950 p-5 text-white border border-dark-700 shadow-xl">
-        <div className="flex items-center gap-2 text-brand text-xs font-bold uppercase tracking-wider mb-1">
-          <Sparkles size={14} /> SR Fidelidade & Segurança
-        </div>
-        <h4 className="text-base font-black">Viaje tranquilo em Manaus</h4>
-        <p className="text-xs text-slate-300 mt-1">
-          Motoristas credenciados com vistoria presencial e suporte 24h na central SR Logística.
-        </p>
-      </div>
-
-      {/* Modais de Apoio */}
+      {/* Modal de Suporte */}
       <SupportModal isOpen={isSupportOpen} onClose={() => setIsSupportOpen(false)} />
+
+      {/* Modal de Aprovação Pendente */}
       <PendingApprovalModal isOpen={isPendingModalOpen} onClose={() => setIsPendingModalOpen(false)} />
+
+      {/* Modal de Avaliação Quando Concluída */}
+      {currentTrip && currentTrip.status === 'COMPLETED' && (
+        <RideFinishedModal
+          trip={currentTrip}
+          onFinish={(rating, feedback) => finishRide(rating, feedback)}
+        />
+      )}
     </div>
   );
 }

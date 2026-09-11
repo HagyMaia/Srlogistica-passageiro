@@ -1,19 +1,14 @@
-﻿'use client';
+'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send,
   X,
   Phone,
-  Check,
   CheckCheck,
   Car,
   Star,
-  Mic,
-  Smile,
-  ShieldCheck,
-  MapPin,
-  Sparkles
+  ShieldCheck
 } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
@@ -42,21 +37,7 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const driver = trip.driver || {
-    id: 'driver-default',
-    name: 'Carlos Eduardo da Silva',
-    phone: '(92) 98492-3316',
-    rating: 4.96,
-    total_rides: 1420,
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    vehicle: {
-      brand: 'Chevrolet',
-      model: 'Onix Plus',
-      color: 'Prata Metálico',
-      plate: 'ABC-1D23',
-      category: 'POPULAR'
-    }
-  };
+  const driver = trip.driver;
 
   // Rola para a última mensagem ao abrir ou quando nova mensagem chega
   useEffect(() => {
@@ -85,7 +66,7 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
     switch (trip.status) {
       case 'DRIVER_ASSIGNED':
       case 'DRIVER_ARRIVING':
-        return 'Motorista a caminho (~3 min)';
+        return 'Motorista a caminho';
       case 'DRIVER_ARRIVED':
         return 'Motorista no ponto de embarque';
       case 'IN_PROGRESS':
@@ -95,6 +76,8 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
     }
   };
 
+  const driverDisplayName = driver?.name || 'Motorista';
+
   return (
     <div className="fixed inset-0 z-[1400] flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="flex flex-col h-[92vh] sm:h-[620px] w-full max-w-lg rounded-t-3xl sm:rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 shadow-2xl overflow-hidden">
@@ -102,37 +85,51 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-dark-800 bg-slate-50/90 dark:bg-dark-950/90 backdrop-blur-md">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <img
-                src={driver.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
-                alt={driver.name}
-                className="h-11 w-11 rounded-2xl object-cover border-2 border-brand"
-              />
+              {driver?.avatar_url ? (
+                <img
+                  src={driver.avatar_url}
+                  alt={driverDisplayName}
+                  className="h-11 w-11 rounded-2xl object-cover border-2 border-brand"
+                />
+              ) : (
+                <div className="h-11 w-11 rounded-2xl bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-base">
+                  {driverDisplayName.charAt(0)}
+                </div>
+              )}
               <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-dark-900" />
             </div>
 
             <div>
               <div className="flex items-center gap-1.5">
                 <h3 className="text-sm font-black text-slate-900 dark:text-white truncate max-w-[170px]">
-                  {driver.name}
+                  {driverDisplayName}
                 </h3>
-                <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.2 rounded-md">
-                  <Star size={10} fill="currentColor" /> {driver.rating}
-                </span>
+                {driver && (
+                  <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.2 rounded-md">
+                    <Star size={10} fill="currentColor" /> {driver.rating || 4.95}
+                  </span>
+                )}
               </div>
-              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                {driver.vehicle.model} · {driver.vehicle.color} · <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{driver.vehicle.plate}</span>
-              </p>
+              {driver ? (
+                <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  {driver.vehicle.brand} {driver.vehicle.model} · <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{driver.vehicle.plate}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] font-medium text-slate-400">SR Logística</p>
+              )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <a
-              href={`tel:${driver.phone}`}
-              className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition active:scale-95"
-              title="Ligar para motorista"
-            >
-              <Phone size={17} />
-            </a>
+            {driver?.phone && (
+              <a
+                href={`tel:${driver.phone}`}
+                className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition active:scale-95"
+                title="Ligar para motorista"
+              >
+                <Phone size={17} />
+              </a>
+            )}
 
             <button
               onClick={onClose}
@@ -195,7 +192,7 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
             <div className="flex items-center gap-2 animate-in fade-in duration-200">
               <div className="flex items-center gap-1 bg-white dark:bg-dark-800 border border-slate-200 dark:border-dark-700 rounded-2xl rounded-bl-none px-3.5 py-2.5 shadow-sm">
                 <span className="text-[11px] font-bold text-slate-500 dark:text-slate-300">
-                  {driver.name.split(' ')[0]} está digitando
+                  {driverDisplayName.split(' ')[0]} está digitando
                 </span>
                 <div className="flex gap-1 ml-1 items-center">
                   <span className="h-1.5 w-1.5 rounded-full bg-brand animate-bounce [animation-delay:-0.3s]" />

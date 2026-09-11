@@ -78,7 +78,7 @@ export default function LoginPage() {
         } catch (_) {}
       }
 
-      window.location.href = '/mapa';
+      window.location.href = '/';
     } catch {
       setErrorMsg('Erro inesperado ao conectar.');
       setLoading(false);

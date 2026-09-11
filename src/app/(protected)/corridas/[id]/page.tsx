@@ -1,31 +1,88 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, MapPin, Navigation, Star, ShieldCheck, Car, Calendar, Receipt, DollarSign } from 'lucide-react';
 import { Button, Card, Badge } from '@/components/ui';
 import { formatCurrency, formatDateTime } from '@/lib/utils';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 
 export default function CorridaDetalhePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [rideData, setRideData] = useState<any>(null);
 
-  // Dados mockados / carregados da corrida
-  const ride = {
+  useEffect(() => {
+    const fetchRideDetails = async () => {
+      if (!isSupabaseConfigured) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Tenta buscar da tabela rides
+        const { data: ride } = await supabase
+          .from('rides')
+          .select('*')
+          .eq('id', resolvedParams.id)
+          .maybeSingle();
+
+        if (ride) {
+          let driverInfo = null;
+          if (ride.driver_id) {
+            const { data: drv } = await supabase
+              .from('motoristas')
+              .select('*')
+              .eq('id', ride.driver_id)
+              .maybeSingle();
+            driverInfo = drv;
+          }
+
+          setRideData({
+            id: ride.id,
+            date: ride.created_at || new Date().toISOString(),
+            pickup: ride.pickup_address || 'Ponto de Embarque',
+            dropoff: ride.dropoff_address || 'Ponto de Desembarque',
+            distance: `${ride.distance_km || 4.5} km`,
+            duration: `${Math.round((ride.distance_km || 4.5) * 3)} min`,
+            category: 'SR Pop',
+            driver: driverInfo ? {
+              name: driverInfo.nome || driverInfo.nome_social || 'Motorista SR',
+              vehicle: `${driverInfo.marca_veiculo || ''} ${driverInfo.modelo_veiculo || ''} · ${driverInfo.cor_veiculo || ''} (${driverInfo.placa_veiculo || ''})`,
+              avatar: driverInfo.avatar_url,
+              rating: driverInfo.rating || 4.95
+            } : null,
+            payment: {
+              method: 'PIX',
+              base: 5.50,
+              km: (ride.fare_amount || 20) * 0.6,
+              time: (ride.fare_amount || 20) * 0.4 - 5.50,
+              discount: 0.00,
+              total: ride.fare_amount || 20.00
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Erro ao carregar detalhes da corrida:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchRideDetails();
+  }, [resolvedParams.id]);
+
+  const ride = rideData || {
     id: resolvedParams.id,
     date: new Date().toISOString(),
-    pickup: 'Av. Mário Ypiranga, 1300 - Adrianópolis, Manaus',
-    dropoff: 'Av. Djalma Batista, 482 - Parque 10 de Novembro, Manaus',
+    pickup: 'Ponto de Embarque Manaus',
+    dropoff: 'Destino Manaus',
     distance: '4.8 km',
     duration: '14 min',
     category: 'SR Pop',
-    driver: {
-      name: 'Carlos Eduardo da Silva',
-      vehicle: 'Chevrolet Onix Plus · Prata (ABC-1D23)',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-      rating: 4.96
-    },
+    driver: null,
     payment: {
       method: 'PIX',
       base: 5.50,
@@ -52,23 +109,31 @@ export default function CorridaDetalhePage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
-      {/* Card do Motorista */}
-      <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <img
-            src={ride.driver.avatar}
-            alt={ride.driver.name}
-            className="h-12 w-12 rounded-2xl object-cover border border-brand"
-          />
-          <div>
-            <h3 className="text-sm font-black text-slate-900 dark:text-white">{ride.driver.name}</h3>
-            <p className="text-xs text-slate-400">{ride.driver.vehicle}</p>
-            <div className="flex items-center gap-1 text-[11px] font-bold text-brand mt-0.5">
-              <Star size={12} fill="#FFC800" /> {ride.driver.rating}
+      {/* Card do Motorista Real se atribuído */}
+      {ride.driver && (
+        <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {ride.driver.avatar ? (
+              <img
+                src={ride.driver.avatar}
+                alt={ride.driver.name}
+                className="h-12 w-12 rounded-2xl object-cover border border-brand"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded-2xl bg-dark-700 border border-brand flex items-center justify-center text-brand font-black">
+                {ride.driver.name.charAt(0)}
+              </div>
+            )}
+            <div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white">{ride.driver.name}</h3>
+              <p className="text-xs text-slate-400">{ride.driver.vehicle}</p>
+              <div className="flex items-center gap-1 text-[11px] font-bold text-brand mt-0.5">
+                <Star size={12} fill="#FFC800" /> {ride.driver.rating}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Rota */}
       <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-sm space-y-3 text-xs">
@@ -123,7 +188,7 @@ export default function CorridaDetalhePage({ params }: { params: Promise<{ id: s
       {/* Ação: Solicitar Novamente */}
       <Link href="/mapa" className="w-full block">
         <Button variant="primary" size="lg" full>
-          Solicitar Viagem Semelhante
+          Solicitar Nova Viagem
         </Button>
       </Link>
     </div>

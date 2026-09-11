@@ -8,6 +8,7 @@ import type {
 } from '../domain/passenger-trip.types';
 import type { LocationCoordinates, PaymentMethod, DriverInfo } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { haversineDistance } from '@/services/routing';
 
 const STORAGE_KEY = 'sr-passenger-active-trip';
 const SCHEDULED_STORAGE_KEY = 'sr-passenger-scheduled-trips';
@@ -32,6 +33,7 @@ interface PassengerTripStore {
 
   setOrigin: (loc: LocationCoordinates) => void;
   setDestination: (loc: LocationCoordinates | null) => void;
+  swapOriginAndDestination: () => void;
   setSelectedCategory: (cat: TripCategory) => void;
   setSelectedPaymentMethod: (pm: PaymentMethod) => void;
   setRouteInfo: (params: {
@@ -101,30 +103,19 @@ function persistTrip(trip: PassengerTrip | null) {
   }
 }
 
-function getDriverSmartReply(passengerMsg: string): string {
-  const lower = passengerMsg.toLowerCase();
-  if (lower.includes('ar') || lower.includes('quente') || lower.includes('frio') || lower.includes('ar-condicionado')) {
-    return 'Pode deixar, já liguei o ar-condicionado!';
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // fallback
+    }
   }
-  if (lower.includes('descendo') || lower.includes('elevador') || lower.includes('minuto') || lower.includes('min') || lower.includes('ja vou') || lower.includes('aguarde')) {
-    return 'Sem pressa! Aguardo você no ponto de embarque com calma.';
-  }
-  if (lower.includes('portaria') || lower.includes('ponto') || lower.includes('cheguei') || lower.includes('aqui') || lower.includes('embarque')) {
-    return 'Perfeito! Já estou encostando no local de embarque.';
-  }
-  if (lower.includes('mala') || lower.includes('bagagem') || lower.includes('porta mala') || lower.includes('porta-mala')) {
-    return 'Tranquilo, o porta-malas já está liberado para suas malas!';
-  }
-  if (lower.includes('camisa') || lower.includes('roupa') || lower.includes('mochila') || lower.includes('identificar')) {
-    return 'Ótimo, já sei como te identificar ao chegar!';
-  }
-  if (lower.includes('onde') || lower.includes('demora') || lower.includes('longe')) {
-    return 'Estou a cerca de 2 minutinhos do seu local!';
-  }
-  if (lower.includes('obrigado') || lower.includes('obrigada') || lower.includes('valeu')) {
-    return 'Às ordens! Até já.';
-  }
-  return 'Combinado! Qualquer novidade me avise por aqui.';
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 const initialSavedTrip = loadSavedTrip();
@@ -149,6 +140,17 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
 
   setOrigin: (loc) => set({ origin: loc }),
   setDestination: (loc) => set({ destination: loc }),
+
+  swapOriginAndDestination: () => {
+    const { origin, destination } = get();
+    if (origin && destination) {
+      set({
+        origin: destination,
+        destination: origin
+      });
+    }
+  },
+
   setSelectedCategory: (selectedCategory) => set({ selectedCategory }),
   setSelectedPaymentMethod: (selectedPaymentMethod) => set({ selectedPaymentMethod }),
 
@@ -180,21 +182,6 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     const now = new Date().toISOString();
     let updatedMessages = currentTrip.messages || chatMessages || [];
     let newUnread = get().unreadChatCount;
-
-    // Quando o motorista aceita a corrida e não há mensagem, adiciona a saudação inicial do motorista
-    if (nextStatus === 'DRIVER_ASSIGNED' && updatedMessages.length === 0 && currentTrip.driver) {
-      const welcome: ChatMessage = {
-        id: `msg-welcome-${Date.now()}`,
-        tripId: currentTrip.id,
-        sender: 'driver',
-        senderName: currentTrip.driver.name || 'Motorista',
-        text: `Olá, ${currentTrip.passengerName.split(' ')[0]}! Aceitei sua corrida e já estou me deslocando até você.`,
-        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        isRead: false
-      };
-      updatedMessages = [welcome];
-      newUnread = 1;
-    }
 
     const updated: PassengerTrip = {
       ...currentTrip,
@@ -256,7 +243,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     persistTrip(updatedTrip);
     set({ currentTrip: updatedTrip, chatMessages: newMessages });
 
-    // Tenta persistir no Supabase caso a tabela de mensagens exista
+    // Envia para o Supabase em tempo real para o app do motorista
     try {
       if (isSupabaseConfigured) {
         await supabase.from('trip_messages').insert({
@@ -269,34 +256,6 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
         });
       }
     } catch (_) {}
-
-    // Simulação realista de digitação e resposta do motorista
-    setTimeout(() => {
-      set({ isDriverTyping: true });
-    }, 600);
-
-    setTimeout(() => {
-      const driverReplyText = getDriverSmartReply(text);
-      const replyMsg: ChatMessage = {
-        id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        tripId: currentTrip.id,
-        sender: 'driver',
-        senderName: currentTrip.driver?.name || 'Motorista',
-        text: driverReplyText,
-        timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
-        isRead: false
-      };
-
-      const finalMessages = [...get().chatMessages, replyMsg];
-      const finalTrip = { ...get().currentTrip!, messages: finalMessages };
-      persistTrip(finalTrip);
-      set({
-        currentTrip: finalTrip,
-        chatMessages: finalMessages,
-        isDriverTyping: false,
-        unreadChatCount: get().unreadChatCount + 1
-      });
-    }, 2200);
   },
 
   addDriverMessage: (text: string) => {
@@ -352,10 +311,20 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       return null;
     }
 
+    // Validação estrita: Origem e Destino não podem ser o mesmo local!
+    const dist = haversineDistance(origin.latitude, origin.longitude, destination.latitude, destination.longitude);
+    const isSameAddress = origin.address && destination.address && origin.address.trim().toLowerCase() === destination.address.trim().toLowerCase();
+    if (dist < 50 || isSameAddress) {
+      set({ error: 'O local de embarque e o destino não podem ser o mesmo local. Por favor, escolha um destino diferente.' });
+      return null;
+    }
+
     set({ isCreating: true, error: null });
 
+    const newTripId = generateUUID();
+
     const newTrip: PassengerTrip = {
-      id: `trip-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: newTripId,
       status: 'SEARCHING_DRIVER',
       passengerId: passenger.id,
       passengerName: passenger.name,
@@ -372,49 +341,61 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     };
 
     try {
-      // 1. Grava na tabela do Supabase compartilhada com o App do Motorista
-      const tripPayload = {
-        id: newTrip.id,
-        passenger_id: passenger.id,
-        passenger_name: passenger.name,
-        pickup: origin.address || `${origin.latitude}, ${origin.longitude}`,
-        dropoff: destination.address || `${destination.latitude}, ${destination.longitude}`,
-        origin_lat: origin.latitude,
-        origin_lng: origin.longitude,
-        destination_lat: destination.latitude,
-        destination_lng: destination.longitude,
-        category: selectedCategory,
-        payment_method: selectedPaymentMethod,
-        fare: estimatedFare,
-        estimated_price: estimatedFare,
-        distance_meters: estimatedDistanceMeters,
-        duration_seconds: estimatedDurationSeconds,
-        status: 'REQUESTED',
-        created_at: newTrip.requestedAt
-      };
+      if (isSupabaseConfigured) {
+        const isUUID = (str?: string) => Boolean(str && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str));
+        const validPassengerId = isUUID(passenger.id) ? passenger.id : generateUUID();
 
-      await supabase.from('trips').insert(tripPayload);
-      // Salva também na tabela rides caso o backend use rides
-      try {
-        await supabase.from('rides').insert({
-          id: newTrip.id,
-          passenger_name: passenger.name,
-          pickup: origin.address,
-          dropoff: destination.address,
-          fare: estimatedFare,
-          status: 'REQUESTED'
-        });
-      } catch {
-        // ignore
+        // 1. Grava na tabela 'rides' (tabela principal do banco)
+        const ridePayload = {
+          id: newTripId,
+          passenger_id: validPassengerId,
+          pickup_address: origin.address || `${origin.latitude}, ${origin.longitude}`,
+          pickup_lat: origin.latitude,
+          pickup_lng: origin.longitude,
+          dropoff_address: destination.address || `${destination.latitude}, ${destination.longitude}`,
+          dropoff_lat: destination.latitude,
+          dropoff_lng: destination.longitude,
+          fare_amount: estimatedFare,
+          distance_km: Math.max(1, Math.round((estimatedDistanceMeters / 1000) * 10) / 10),
+          status: 'SEARCHING'
+        };
+
+        const { error: rideError } = await supabase.from('rides').insert(ridePayload);
+        if (rideError) {
+          console.warn('Erro ao inserir em rides:', rideError.message);
+        }
+
+        // 2. Grava também na tabela 'trips' (caso exista para compatibilidade)
+        try {
+          await supabase.from('trips').insert({
+            id: newTripId,
+            passenger_id: passenger.id,
+            passenger_name: passenger.name,
+            pickup: origin.address,
+            dropoff: destination.address,
+            origin_lat: origin.latitude,
+            origin_lng: origin.longitude,
+            destination_lat: destination.latitude,
+            destination_lng: destination.longitude,
+            category: selectedCategory,
+            payment_method: selectedPaymentMethod,
+            fare: estimatedFare,
+            estimated_price: estimatedFare,
+            distance_meters: estimatedDistanceMeters,
+            duration_seconds: estimatedDurationSeconds,
+            status: 'SEARCHING',
+            created_at: newTrip.requestedAt
+          });
+        } catch (_) {}
       }
 
       persistTrip(newTrip);
-      set({ currentTrip: newTrip, isCreating: false });
+      set({ currentTrip: newTrip, isCreating: false, error: null });
       return newTrip;
     } catch (err: any) {
-      // Fallback local garantido
+      console.warn('Erro na solicitação da corrida:', err);
       persistTrip(newTrip);
-      set({ currentTrip: newTrip, isCreating: false });
+      set({ currentTrip: newTrip, isCreating: false, error: null });
       return newTrip;
     }
   },
@@ -433,6 +414,11 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
 
     try {
       if (isSupabaseConfigured) {
+        await supabase
+          .from('rides')
+          .update({ status: 'CANCELLED' })
+          .eq('id', currentTrip.id);
+
         await supabase
           .from('trips')
           .update({ status: 'CANCELLED', cancellation_reason: reason })
@@ -462,10 +448,19 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       return null;
     }
 
+    const dist = haversineDistance(origin.latitude, origin.longitude, destination.latitude, destination.longitude);
+    const isSameAddress = origin.address && destination.address && origin.address.trim().toLowerCase() === destination.address.trim().toLowerCase();
+    if (dist < 50 || isSameAddress) {
+      set({ error: 'O local de embarque e o destino não podem ser o mesmo local. Por favor, escolha um destino diferente.' });
+      return null;
+    }
+
     set({ isCreating: true, error: null });
 
+    const newTripId = generateUUID();
+
     const newTrip: PassengerTrip = {
-      id: `scheduled-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      id: newTripId,
       status: 'SCHEDULED',
       passengerId: passenger.id,
       passengerName: passenger.name,
@@ -523,7 +518,8 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       routeCoordinates: [],
       estimatedDistanceMeters: 0,
       estimatedDurationSeconds: 0,
-      estimatedFare: 0
+      estimatedFare: 0,
+      error: null
     });
 
     return newTrip;
@@ -548,7 +544,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
   loadScheduledTrips: async (passengerId?: string) => {
     if (isSupabaseConfigured && passengerId) {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('trips')
           .select('*')
           .eq('passenger_id', passengerId)

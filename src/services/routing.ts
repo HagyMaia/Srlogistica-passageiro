@@ -7,7 +7,7 @@ export interface RouteResult {
 }
 
 // Cálculo da distância euclidiana/haversine como base e fallback
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3; // metros
   const phi1 = (lat1 * Math.PI) / 180;
   const phi2 = (lat2 * Math.PI) / 180;
@@ -32,6 +32,18 @@ export async function calculateRoute(
     destination.latitude,
     destination.longitude
   );
+
+  // Se forem o mesmo ponto (< 30 metros), retorna rota vazia/zero
+  if (straightDistance < 30) {
+    return {
+      distanceMeters: 0,
+      durationSeconds: 0,
+      coordinates: [
+        [origin.latitude, origin.longitude],
+        [destination.latitude, destination.longitude]
+      ]
+    };
+  }
 
   // Fator de correção de malha viária urbana (geralmente ~1.3x a 1.4x a linha reta)
   const estimatedStreetMeters = Math.max(500, Math.round(straightDistance * 1.35));

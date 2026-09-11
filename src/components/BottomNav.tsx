@@ -2,13 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, MapPin, Clock, Wallet, User } from 'lucide-react';
+import { Home, Clock, Wallet, User } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Início', icon: Home },
-  { href: '/mapa', label: 'Solicitar', icon: MapPin },
-  { href: '/corridas', label: 'Histórico', icon: Clock },
+  { href: '/corridas', label: 'Viagens', icon: Clock },
   { href: '/carteira', label: 'Carteira', icon: Wallet },
   { href: '/perfil', label: 'Perfil', icon: User }
 ];
@@ -16,16 +15,19 @@ const NAV_ITEMS = [
 export default function BottomNav() {
   const pathname = usePathname();
 
-  // Não exibe o BottomNav na tela de login e cadastro
-  if (pathname === '/login' || pathname === '/cadastro') {
+  // Não exibe o BottomNav nas telas de onboarding/autenticação
+  if (pathname === '/login' || pathname === '/cadastro' || pathname === '/welcome') {
     return null;
   }
 
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-[1100] border-t border-slate-200/80 dark:border-dark-700/80 bg-white/95 dark:bg-dark-950/95 backdrop-blur-xl shadow-[0_-10px_25px_rgba(0,0,0,0.08)] dark:shadow-[0_-18px_35px_rgba(0,0,0,0.4)]">
-      <div className="mx-auto flex max-w-md items-stretch justify-around px-2 py-2">
+      <div className="mx-auto flex max-w-md items-stretch justify-around px-3 py-2">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== '/' && pathname.startsWith(href));
+          const active =
+            pathname === href ||
+            (href === '/' && pathname === '/mapa') ||
+            (href !== '/' && pathname.startsWith(href));
 
           return (
             <Link

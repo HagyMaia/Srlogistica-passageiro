@@ -27,35 +27,19 @@ interface PassengerActiveRideSheetProps {
   trip: PassengerTrip;
   onCancel: () => void;
   onSendMessage?: (msg: string) => void;
-  onSimulateNext?: () => void; // Apenas para testes/demonstração
 }
 
 export function PassengerActiveRideSheet({
   trip,
   onCancel,
-  onSendMessage,
-  onSimulateNext
+  onSendMessage
 }: PassengerActiveRideSheetProps) {
   const [showChatModal, setShowChatModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
   const [showPixModal, setShowPixModal] = useState(false);
   const { chatMessages, unreadChatCount } = usePassengerTripStore();
 
-  const driver = trip.driver || {
-    id: 'driver-default',
-    name: 'Carlos Eduardo da Silva',
-    phone: '(92) 98492-3316',
-    rating: 4.96,
-    total_rides: 1420,
-    avatar_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
-    vehicle: {
-      brand: 'Chevrolet',
-      model: 'Onix Plus',
-      color: 'Prata Metálico',
-      plate: 'ABC-1D23',
-      category: 'POPULAR'
-    }
-  };
+  const driver = trip.driver;
 
   const lastMessage = chatMessages.length > 0 ? chatMessages[chatMessages.length - 1] : null;
 
@@ -65,8 +49,8 @@ export function PassengerActiveRideSheet({
       case 'DRIVER_ARRIVING':
         return {
           title: 'Motorista a caminho',
-          subtitle: 'Chegando ao seu local de embarque em ~3 min',
-          badge: 'Chegando',
+          subtitle: 'Deslocando-se até seu ponto de embarque',
+          badge: 'A Caminho',
           color: 'bg-amber-500/10 text-amber-600 dark:text-brand border-amber-500/30'
         };
       case 'DRIVER_ARRIVED':
@@ -79,14 +63,14 @@ export function PassengerActiveRideSheet({
       case 'IN_PROGRESS':
         return {
           title: 'Viagem em andamento',
-          subtitle: 'A caminho do seu destino com conforto',
+          subtitle: 'A caminho do seu destino com conforto e segurança',
           badge: 'Em Rota',
           color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
         };
       default:
         return {
           title: 'Corrida confirmada',
-          subtitle: 'Acompanhe pelo mapa',
+          subtitle: 'Acompanhe pelo mapa em tempo real',
           badge: 'Ativa',
           color: 'bg-brand/10 text-brand-700 dark:text-brand border-brand/30'
         };
@@ -115,60 +99,88 @@ export function PassengerActiveRideSheet({
           </span>
         </div>
 
-        {/* Card do Motorista e Veículo */}
-        <div className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-3.5 border border-slate-100 dark:border-dark-800">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <img
-                src={driver.avatar_url || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80'}
-                alt={driver.name}
-                className="h-13 w-13 rounded-2xl object-cover border-2 border-brand"
-              />
-              <div className="absolute -bottom-1 -right-1 flex items-center gap-0.5 rounded-full bg-dark-900 px-1.5 py-0.2 text-[10px] font-bold text-brand border border-dark-700">
-                <Star size={10} fill="#FFC800" />
-                {driver.rating}
+        {/* Card do Motorista e Veículo (Somente dados reais) */}
+        {driver ? (
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-3.5 border border-slate-100 dark:border-dark-800">
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                {driver.avatar_url ? (
+                  <img
+                    src={driver.avatar_url}
+                    alt={driver.name}
+                    className="h-13 w-13 rounded-2xl object-cover border-2 border-brand"
+                  />
+                ) : (
+                  <div className="h-13 w-13 rounded-2xl bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-lg">
+                    {driver.name.charAt(0)}
+                  </div>
+                )}
+                <div className="absolute -bottom-1 -right-1 flex items-center gap-0.5 rounded-full bg-dark-900 px-1.5 py-0.2 text-[10px] font-bold text-brand border border-dark-700">
+                  <Star size={10} fill="#FFC800" />
+                  {driver.rating || 4.95}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">{driver.name}</h3>
+                <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {driver.vehicle.brand} {driver.vehicle.model} {driver.vehicle.color ? `· ${driver.vehicle.color}` : ''}
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="rounded-md bg-dark-900 px-2 py-0.5 font-mono text-[11px] font-black text-white border border-dark-700">
+                    {driver.vehicle.plate}
+                  </span>
+                  {driver.total_rides > 0 && (
+                    <span className="text-[10px] text-slate-400">
+                      {driver.total_rides} corridas
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div>
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">{driver.name}</h3>
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {driver.vehicle.brand} {driver.vehicle.model} · {driver.vehicle.color}
-              </p>
-              <div className="mt-1 flex items-center gap-2">
-                <span className="rounded-md bg-dark-900 px-2 py-0.5 font-mono text-[11px] font-black text-white border border-dark-700">
-                  {driver.vehicle.plate}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {driver.total_rides} corridas
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Valor Final</span>
-            <span className="text-base font-black text-brand-700 dark:text-brand">
-              {formatCurrency(trip.estimatedFare)}
-            </span>
-            {trip.paymentMethod === 'PIX' ? (
-              <button
-                type="button"
-                onClick={() => setShowPixModal(true)}
-                className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full"
-              >
-                PIX: 52.967.828/0001-17 📋
-              </button>
-            ) : (
-              <span className="text-[10px] text-slate-400 font-semibold">
-                🏢 Voucher Quinzenal
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Valor Final</span>
+              <span className="text-base font-black text-brand-700 dark:text-brand">
+                {formatCurrency(trip.estimatedFare)}
               </span>
-            )}
+              {trip.paymentMethod === 'PIX' ? (
+                <button
+                  type="button"
+                  onClick={() => setShowPixModal(true)}
+                  className="mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full"
+                >
+                  PIX: 52.967.828/0001-17 📋
+                </button>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-semibold">
+                  🏢 Voucher Quinzenal
+                </span>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-3.5 border border-slate-100 dark:border-dark-800">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-2xl bg-brand/20 flex items-center justify-center text-brand">
+                <Car size={24} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">Motorista Designado</h3>
+                <p className="text-xs text-slate-400">Carregando detalhes do veículo...</p>
+              </div>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">Valor</span>
+              <span className="text-base font-black text-brand-700 dark:text-brand">
+                {formatCurrency(trip.estimatedFare)}
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Card Interativo de Notificação / Última Mensagem do Chat */}
-        {lastMessage && (
+        {lastMessage && driver && (
           <button
             onClick={() => setShowChatModal(true)}
             className="flex items-center justify-between w-full p-2.5 rounded-2xl bg-amber-500/10 dark:bg-dark-800/90 border border-brand/30 hover:border-brand text-left transition active:scale-[0.99] group shadow-sm"
@@ -220,13 +232,20 @@ export function PassengerActiveRideSheet({
             )}
           </button>
 
-          <a
-            href={`tel:${driver.phone}`}
-            className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-slate-100 dark:bg-dark-800 p-2.5 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-dark-700 transition active:scale-95 border border-slate-200/60 dark:border-dark-700/60"
-          >
-            <Phone size={18} className="text-emerald-500" />
-            <span className="text-[11px] font-bold">Ligar</span>
-          </a>
+          {driver?.phone ? (
+            <a
+              href={`tel:${driver.phone}`}
+              className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-slate-100 dark:bg-dark-800 p-2.5 text-slate-800 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-dark-700 transition active:scale-95 border border-slate-200/60 dark:border-dark-700/60"
+            >
+              <Phone size={18} className="text-emerald-500" />
+              <span className="text-[11px] font-bold">Ligar</span>
+            </a>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-1 rounded-2xl bg-slate-100 dark:bg-dark-800 p-2.5 text-slate-400 opacity-60 border border-slate-200/60 dark:border-dark-700/60">
+              <Phone size={18} />
+              <span className="text-[11px] font-bold">Ligar</span>
+            </div>
+          )}
 
           <button
             onClick={() => setShowSafetyModal(true)}
@@ -237,45 +256,39 @@ export function PassengerActiveRideSheet({
           </button>
         </div>
 
-        {/* Resumo da Rota */}
+        {/* Resumo da Rota: Origem e Destino com endereços claros */}
         <div className="space-y-2 rounded-2xl bg-slate-50 dark:bg-dark-950/40 p-3 text-xs border border-slate-100 dark:border-dark-800">
-          <div className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
-            <MapPin size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 text-slate-600 dark:text-slate-300">
+            <MapPin size={15} className="text-emerald-500 shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-semibold text-slate-400 block">Embarque</span>
-              <p className="font-bold truncate">{trip.origin.address}</p>
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Embarque</span>
+              <p className="font-bold text-slate-900 dark:text-white truncate">
+                {trip.origin?.address || `${trip.origin?.latitude}, ${trip.origin?.longitude}`}
+              </p>
             </div>
           </div>
-          <div className="flex items-start gap-2 text-slate-600 dark:text-slate-300">
-            <Navigation size={14} className="text-brand shrink-0 mt-0.5" />
+          <div className="flex items-start gap-2.5 text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-200/60 dark:border-dark-800">
+            <Navigation size={15} className="text-brand shrink-0 mt-0.5" />
             <div className="flex-1 min-w-0">
-              <span className="text-[10px] font-semibold text-slate-400 block">Destino</span>
-              <p className="font-bold truncate">{trip.destination.address}</p>
+              <span className="text-[10px] font-bold uppercase text-slate-400 block">Destino</span>
+              <p className="font-bold text-slate-900 dark:text-white truncate">
+                {trip.destination?.address || `${trip.destination?.latitude}, ${trip.destination?.longitude}`}
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Botão de Cancelamento ou Simulação de Passo para Demonstração */}
-        <div className="flex items-center gap-2 pt-0.5">
-          {trip.status !== 'IN_PROGRESS' && (
+        {/* Botão de Cancelamento */}
+        {trip.status !== 'IN_PROGRESS' && (
+          <div className="pt-0.5">
             <button
               onClick={onCancel}
-              className="flex-1 text-center py-2 text-xs font-bold text-slate-500 hover:text-red-500 transition"
+              className="w-full text-center py-2 text-xs font-bold text-red-500/80 hover:text-red-600 transition"
             >
               Cancelar Viagem
             </button>
-          )}
-
-          {onSimulateNext && (
-            <button
-              onClick={onSimulateNext}
-              className="px-3 py-1.5 rounded-xl bg-brand/20 text-brand-800 dark:text-brand text-[11px] font-black hover:bg-brand/30 transition"
-              title="Avançar status da corrida (Modo Demonstração)"
-            >
-              Simular Avanço ➔
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Modal de Chat em Tempo Real com o Motorista */}
