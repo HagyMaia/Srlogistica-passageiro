@@ -41,6 +41,7 @@ import { RideFinishedModal } from '@/components/Ride/RideFinishedModal';
 import { ScheduledSuccessModal } from '@/components/Ride/ScheduledSuccessModal';
 import { SupportModal } from '@/components/SupportModal';
 import { PendingApprovalModal } from '@/components/PendingApprovalModal';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { usePassengerLocation } from '@/hooks/usePassengerLocation';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
 import { useRideStatus } from '@/hooks/useRideStatus';
@@ -509,8 +510,10 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* Botões de Ação Rápida: Ajuda e GPS */}
-          <div className="pointer-events-auto flex items-center gap-2">
+          {/* Botões de Ação Rápida: Ajuda, Tema e GPS */}
+          <div className="pointer-events-auto flex items-center gap-1.5">
+            <ThemeToggle />
+
             <button
               onClick={() => setIsSupportOpen(true)}
               className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"

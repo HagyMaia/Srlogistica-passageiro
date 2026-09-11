@@ -52,9 +52,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               {children}
               <BottomNav />
             </div>
-            <div className="fixed right-4 bottom-20 z-[1110]">
-              <ThemeToggle />
-            </div>
           </AuthProvider>
         </ThemeProvider>
       </body>

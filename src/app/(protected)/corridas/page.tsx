@@ -62,30 +62,53 @@ export default function CorridasPage() {
       try {
         if (isSupabaseConfigured) {
           const { data, error } = await supabase
-            .from('trips')
-            .select('*')
+            .from('rides')
+            .select(`
+              id,
+              pickup_address,
+              dropoff_address,
+              pickup_lat,
+              pickup_lng,
+              dropoff_lat,
+              dropoff_lng,
+              fare_amount,
+              distance_km,
+              status,
+              created_at,
+              driver_id,
+              motoristas (
+                nome,
+                nome_social,
+                nome_completo
+              )
+            `)
             .eq('passenger_id', user.id)
-            .neq('status', 'SCHEDULED')
             .order('created_at', { ascending: false });
 
           if (data && data.length > 0) {
-            const mapped: HistoricalRide[] = data.map((t: any) => ({
-              id: t.id,
-              pickup: t.pickup || `${t.origin_lat}, ${t.origin_lng}`,
-              dropoff: t.dropoff || `${t.destination_lat}, ${t.destination_lng}`,
-              fare: t.fare || t.estimated_price || 20.0,
-              status: t.status,
-              created_at: t.created_at,
-              driver_name: t.driver_name || 'Motorista SR',
-              category: t.category || 'SR Pop'
-            }));
+            const mapped: HistoricalRide[] = data.map((t: any) => {
+              const driver = Array.isArray(t.motoristas) ? t.motoristas[0] : t.motoristas;
+              const driverName = driver?.nome || driver?.nome_social || driver?.nome_completo || 'Motorista SR';
+              return {
+                id: t.id,
+                pickup: t.pickup_address || `${t.pickup_lat}, ${t.pickup_lng}`,
+                dropoff: t.dropoff_address || `${t.dropoff_lat}, ${t.dropoff_lng}`,
+                fare: Number(t.fare_amount) || 0,
+                status: t.status,
+                created_at: t.created_at,
+                driver_name: driverName,
+                category: 'SR Logística'
+              };
+            });
             setRides(mapped);
           } else {
-            setRides(SEED_RIDES);
+            setRides([]);
           }
+        } else {
+          setRides([]);
         }
       } catch {
-        setRides(SEED_RIDES);
+        setRides([]);
       } finally {
         setLoading(false);
       }
