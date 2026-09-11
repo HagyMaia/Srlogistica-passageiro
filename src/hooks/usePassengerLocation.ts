@@ -32,6 +32,7 @@ export function usePassengerLocation() {
   const [location, setLocation] = useState<LocationCoordinates>(DEFAULT_MANAUS_LOCATION);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [isLiveTracking, setIsLiveTracking] = useState(false);
   const [permissionGranted, setPermissionGranted] = useState<boolean | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -41,21 +42,22 @@ export function usePassengerLocation() {
   const watchIdRef = useRef<number | null>(null);
 
   // Busca reversa de endereço com debounce inteligente por distância
-  const handleReverseGeocode = useCallback(async (lat: number, lng: number) => {
-    if (isGeocodingInProgress.current) return;
+  const handleReverseGeocode = useCallback(async (lat: number, lng: number, force = false) => {
+    if (isGeocodingInProgress.current && !force) return;
 
-    if (lastGeocodedCoords.current) {
+    if (!force && lastGeocodedCoords.current) {
       const dist = calculateDistanceMeters(
         lastGeocodedCoords.current.lat,
         lastGeocodedCoords.current.lng,
         lat,
         lng
       );
-      // Se moveu menos de 30 metros, não precisa re-executar reverse geocode na API
-      if (dist < 30) return;
+      // Se moveu menos de 20 metros, não precisa re-executar reverse geocode na API
+      if (dist < 20) return;
     }
 
     isGeocodingInProgress.current = true;
+    setIsResolvingAddress(true);
     try {
       const geoData = await reverseGeocode(lat, lng);
       lastGeocodedCoords.current = { lat, lng };
@@ -68,9 +70,10 @@ export function usePassengerLocation() {
         city: geoData.city || prev.city
       }));
     } catch {
-      // mantém coordenadas mesmo se api de nome falhar
+      // mantém coordenadas
     } finally {
       isGeocodingInProgress.current = false;
+      setIsResolvingAddress(false);
     }
   }, []);
 
@@ -92,7 +95,7 @@ export function usePassengerLocation() {
         longitude
       }));
 
-      // Faz o reverse geocode em segundo plano
+      // Faz o reverse geocode para buscar nome da rua e bairro
       handleReverseGeocode(latitude, longitude);
     },
     [handleReverseGeocode]
@@ -201,14 +204,22 @@ export function usePassengerLocation() {
     setLocation(newLoc);
   };
 
+  const forceResolveCurrentAddress = () => {
+    if (location?.latitude && location?.longitude) {
+      handleReverseGeocode(location.latitude, location.longitude, true);
+    }
+  };
+
   return {
     location,
     accuracy,
     loading,
+    isResolvingAddress,
     isLiveTracking,
     permissionGranted,
     gpsError,
     refreshLocation: startWatchingLocation,
+    forceResolveAddress: forceResolveCurrentAddress,
     setLocation: updateManualLocation
   };
 }

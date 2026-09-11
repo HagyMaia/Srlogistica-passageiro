@@ -102,13 +102,20 @@ export default function HomePage() {
     location,
     accuracy,
     loading: gpsLoading,
+    isResolvingAddress,
     isLiveTracking,
     permissionGranted,
     gpsError,
-    refreshLocation
+    refreshLocation,
+    forceResolveAddress
   } = usePassengerLocation();
   const [isCustomOrigin, setIsCustomOrigin] = useState(false);
   const [gpsToastMsg, setGpsToastMsg] = useState<string | null>(null);
+
+  // Estados de Ajuste / Confirmação Manual de Endereço de Embarque
+  const [isEditingOriginAddress, setIsEditingOriginAddress] = useState(false);
+  const [customAddressInput, setCustomAddressInput] = useState('');
+  const [addressComplement, setAddressComplement] = useState('');
 
   const {
     currentTrip,
@@ -291,10 +298,37 @@ export default function HomePage() {
     }
   };
 
+  // Salvar ajuste manual de endereço de embarque
+  const handleSaveCustomOriginAddress = async () => {
+    const baseAddr = customAddressInput.trim() || origin?.address || location?.address || 'Manaus - AM';
+    const finalAddr = addressComplement.trim() ? `${baseAddr} (${addressComplement.trim()})` : baseAddr;
+
+    const updatedOrigin: LocationCoordinates = {
+      latitude: origin?.latitude || location?.latitude || -3.1037,
+      longitude: origin?.longitude || location?.longitude || -60.0125,
+      address: finalAddr,
+      neighborhood: origin?.neighborhood || location?.neighborhood || 'Manaus',
+      city: origin?.city || location?.city || 'Manaus'
+    };
+
+    setIsCustomOrigin(true);
+    setOrigin(updatedOrigin);
+    setIsEditingOriginAddress(false);
+
+    if (destination) {
+      await updateRouteCalculation(updatedOrigin, destination);
+      setActiveStep('SELECT_CATEGORY');
+    }
+
+    setGpsToastMsg('📍 Endereço de embarque confirmado!');
+    setTimeout(() => setGpsToastMsg(null), 3000);
+  };
+
   // Recentralizar GPS em tempo real
   const handleRecenterGPS = () => {
     setIsCustomOrigin(false);
     refreshLocation();
+    forceResolveAddress();
     if (location) {
       setOrigin(location);
       if (destination) {
@@ -658,63 +692,106 @@ export default function HomePage() {
                   </button>
                 </div>
 
-                {/* Bloco de Rota Interativa: Ponto de Embarque e Destino */}
-                <div className="space-y-2 rounded-2xl bg-slate-50 dark:bg-dark-800/80 p-3 border border-slate-200/60 dark:border-dark-700/60">
-                  {/* Linha 1: Embarque (De) */}
-                  <div
-                    onClick={() => {
-                      setSearchTarget('ORIGIN');
-                      setSearchQuery('');
-                      setActiveStep('SELECT_DESTINATION');
-                    }}
-                    className="flex items-center justify-between cursor-pointer group py-0.5"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-black text-xs">
-                        <MapPin size={15} />
+                {/* Card de Confirmação e Exibição do Ponto de Embarque / GPS */}
+                <div className="rounded-2xl bg-gradient-to-br from-emerald-500/10 via-emerald-500/5 to-slate-50 dark:to-dark-800/80 p-3 border border-emerald-500/30 space-y-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white font-black shadow-md mt-0.5">
+                        <MapPin size={16} />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                          Ponto de Embarque (De)
-                        </span>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {origin?.address || 'Definir local de embarque...'}
-                        </p>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                            Ponto de Partida / Embarque
+                          </span>
+                          <span className="text-[9px] px-2 py-0.2 rounded-full bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-500/30">
+                            {isLiveTracking ? '● GPS em Tempo Real' : 'Localização'}
+                          </span>
+                        </div>
+
+                        {isResolvingAddress ? (
+                          <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-bold text-xs py-1">
+                            <Sparkles size={13} className="animate-spin text-amber-500" />
+                            <span>Identificando rua e número exatos...</span>
+                          </div>
+                        ) : (
+                          <div className="mt-0.5 space-y-0.5">
+                            <p className="text-xs font-black text-slate-900 dark:text-white leading-snug break-words">
+                              {origin?.address || location?.address || 'Detectando endereço...'}
+                            </p>
+                            <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
+                              {origin?.neighborhood || location?.neighborhood || 'Bairro'} • {origin?.city || 'Manaus'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <span className="text-[11px] font-black text-brand-700 dark:text-brand group-hover:underline shrink-0 ml-2">
-                      Alterar
-                    </span>
+
+                    <button
+                      onClick={() => {
+                        setCustomAddressInput(origin?.address || location?.address || '');
+                        setAddressComplement('');
+                        setIsEditingOriginAddress(true);
+                      }}
+                      className="text-[11px] font-black text-emerald-700 dark:text-emerald-400 hover:underline shrink-0 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 rounded-lg border border-emerald-500/20 transition"
+                      title="Adicionar número da casa, bloco ou ponto de referência"
+                    >
+                      Ajustar Nº
+                    </button>
                   </div>
 
-                  <div className="border-t border-slate-200/60 dark:border-dark-700/60" />
+                  {/* Ações Rápidas de Embarque */}
+                  <div className="flex items-center gap-1.5 pt-1 border-t border-emerald-500/20">
+                    <button
+                      onClick={() => {
+                        setSearchTarget('DESTINATION');
+                        setSearchQuery('');
+                        setActiveStep('SELECT_DESTINATION');
+                      }}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-sm transition active:scale-95"
+                    >
+                      <CheckCircle2 size={13} />
+                      <span>Confirmar Partida</span>
+                    </button>
 
-                  {/* Linha 2: Destino (Para) */}
-                  <div
-                    onClick={() => {
-                      setSearchTarget('DESTINATION');
-                      setSearchQuery('');
-                      setActiveStep('SELECT_DESTINATION');
-                    }}
-                    className="flex items-center justify-between cursor-pointer group py-0.5"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand/20 text-brand-700 dark:text-brand font-black text-xs">
-                        <Navigation size={15} />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
-                          Ponto de Destino (Para)
-                        </span>
-                        <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {destination?.address || 'Para onde vamos hoje?'}
-                        </p>
-                      </div>
+                    <button
+                      onClick={() => {
+                        setSearchTarget('ORIGIN');
+                        setSearchQuery('');
+                        setActiveStep('SELECT_DESTINATION');
+                      }}
+                      className="flex items-center justify-center gap-1 py-1.5 px-3 rounded-xl bg-white dark:bg-dark-800 text-slate-700 dark:text-slate-200 hover:text-white font-bold text-xs border border-slate-200 dark:border-dark-700 transition active:scale-95"
+                    >
+                      <span>Mudar Local</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bloco do Destino */}
+                <div
+                  onClick={() => {
+                    setSearchTarget('DESTINATION');
+                    setSearchQuery('');
+                    setActiveStep('SELECT_DESTINATION');
+                  }}
+                  className="flex items-center justify-between cursor-pointer group rounded-2xl bg-slate-50 dark:bg-dark-800/80 p-3 border border-slate-200/60 dark:border-dark-700/60 hover:border-brand transition"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand/20 text-brand-700 dark:text-brand font-black text-xs">
+                      <Navigation size={16} />
                     </div>
-                    <span className="text-[11px] font-black text-brand-700 dark:text-brand group-hover:underline shrink-0 ml-2">
-                      {destination ? 'Alterar' : 'Escolher'}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">
+                        Ponto de Destino (Para)
+                      </span>
+                      <p className="text-xs font-bold text-slate-900 dark:text-white truncate">
+                        {destination?.address || 'Para onde vamos hoje?'}
+                      </p>
+                    </div>
                   </div>
+                  <span className="text-[11px] font-black text-brand-700 dark:text-brand group-hover:underline shrink-0 ml-2">
+                    {destination ? 'Alterar' : 'Escolher'}
+                  </span>
                 </div>
 
                 {/* Atalhos Rápidos de Destinos em Manaus (1-Tap Fast Fill) */}
@@ -841,20 +918,35 @@ export default function HomePage() {
 
                 {/* Botão Usar GPS atual para Embarque */}
                 {searchTarget === 'ORIGIN' && (
-                  <button
-                    onClick={handleUseCurrentLocationAsOrigin}
-                    className="w-full flex items-center gap-2.5 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 p-2.5 text-left text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/20 transition active:scale-[0.99]"
-                  >
-                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white">
-                      <Crosshair size={16} />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-black">Usar Minha Localização Atual (GPS)</h4>
-                      <p className="text-[10px] opacity-80 truncate">
-                        {location?.address || 'Detectar posição pelo GPS'}
-                      </p>
-                    </div>
-                  </button>
+                  <div className="flex items-center gap-2 rounded-2xl bg-emerald-500/10 dark:bg-emerald-500/15 border border-emerald-500/30 p-2.5">
+                    <button
+                      onClick={handleUseCurrentLocationAsOrigin}
+                      className="flex-1 flex items-center gap-2.5 text-left text-emerald-700 dark:text-emerald-400 hover:opacity-80 transition active:scale-[0.99] min-w-0"
+                    >
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
+                        <Crosshair size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-black truncate">Usar Minha Localização Atual</h4>
+                        <p className="text-[11px] font-bold text-slate-800 dark:text-white truncate">
+                          {isResolvingAddress
+                            ? 'Identificando rua e número...'
+                            : (location?.address || 'Detectando endereço via GPS...')}
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setCustomAddressInput(location?.address || '');
+                        setAddressComplement('');
+                        setIsEditingOriginAddress(true);
+                      }}
+                      className="shrink-0 px-2 py-1 rounded-lg bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 text-[10px] font-black hover:bg-emerald-500/30 transition"
+                    >
+                      + Nº / Compl.
+                    </button>
+                  </div>
                 )}
 
                 {/* Sugestões de Lugares */}
@@ -1200,6 +1292,81 @@ export default function HomePage() {
           trip={currentTrip}
           onFinish={(rating, feedback) => finishRide(rating, feedback)}
         />
+      )}
+
+      {/* Modal de Ajuste e Confirmação de Endereço de Embarque */}
+      {isEditingOriginAddress && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-dark-900 p-5 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4 text-left">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-dark-800 pb-3">
+              <div className="flex items-center gap-2">
+                <MapPin size={18} className="text-emerald-500" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">Confirmar Ponto de Embarque</h3>
+              </div>
+              <button
+                onClick={() => setIsEditingOriginAddress(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Endereço / Rua Principal *
+                </label>
+                <input
+                  type="text"
+                  value={customAddressInput}
+                  onChange={(e) => setCustomAddressInput(e.target.value)}
+                  placeholder="Ex: Av. Djalma Batista, Rua Recife..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-slate-50 dark:bg-dark-950 px-3 py-2.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                  Número / Complemento / Ponto de Referência
+                </label>
+                <input
+                  type="text"
+                  value={addressComplement}
+                  onChange={(e) => setAddressComplement(e.target.value)}
+                  placeholder="Ex: Nº 123, Bloco B, Portão 2, Em frente ao shopping"
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-slate-50 dark:bg-dark-950 px-3 py-2.5 text-xs font-bold text-slate-900 dark:text-white outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-800 dark:text-emerald-300 font-medium">
+                💡 O motorista receberá exatamente esse ponto de embarque para encontrar você rapidamente sem desencontros.
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                full
+                onClick={() => setIsEditingOriginAddress(false)}
+                className="py-2.5 font-bold border-slate-200 dark:border-dark-700 text-slate-700 dark:text-slate-300"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                full
+                onClick={handleSaveCustomOriginAddress}
+                className="py-2.5 font-black bg-emerald-600 hover:bg-emerald-500 text-white"
+              >
+                Salvar e Confirmar
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

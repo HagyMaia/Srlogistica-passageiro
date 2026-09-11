@@ -171,49 +171,125 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
   return localMatches.length > 0 ? localMatches : POPULAR_MANAUS_PLACES.slice(0, 4);
 }
 
+// Formata endereço brasileiro limpo, filtrando CEP de números de casas
+function cleanHouseNumber(numStr?: string): string {
+  if (!numStr) return '';
+  const trimmed = numStr.trim();
+  // Se for CEP (ex: 69000-000 ou 69057002), não é número de casa
+  if (/^\d{5}-?\d{3}$/.test(trimmed)) return '';
+  return trimmed;
+}
+
 export async function reverseGeocode(lat: number, lng: number): Promise<LocationCoordinates> {
-  // Verificação de proximidade com pontos conhecidos
+  // 1. Verificação de proximidade imediata (< 40 metros) com pontos de referência emblemáticos de Manaus
   for (const place of POPULAR_MANAUS_PLACES) {
     const dLat = Math.abs(place.coordinates.latitude - lat);
     const dLng = Math.abs(place.coordinates.longitude - lng);
-    if (dLat < 0.003 && dLng < 0.003) {
+    if (dLat < 0.0004 && dLng < 0.0004) {
       return place.coordinates;
     }
   }
 
+  // 2. Provedor Primário: OpenStreetMap Nominatim com zoom detalhado de rua e número
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`;
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`;
     const res = await fetch(url, {
       headers: {
         'Accept-Language': 'pt-BR,pt;q=0.9',
-        'User-Agent': 'SrLogisticaPassengerApp/1.0'
+        'User-Agent': 'SrLogisticaPassengerApp/1.0 (srlogistica21@gmail.com)'
       }
     });
 
     if (res.ok) {
       const item = await res.json();
       const addr = item.address || {};
-      const road = addr.road || addr.pedestrian || 'Rua não identificada';
-      const houseNumber = addr.house_number ? `, ${addr.house_number}` : '';
-      const suburb = addr.suburb || addr.neighbourhood || 'Manaus';
+      
+      const venue = addr.shop || addr.amenity || addr.building || addr.office || addr.leisure || addr.tourism || '';
+      const road = addr.road || addr.street || addr.pedestrian || addr.footway || addr.avenue || addr.residential || venue || '';
+      const rawNum = addr.house_number || '';
+      const houseNumber = cleanHouseNumber(rawNum);
+      const suburb = addr.suburb || addr.neighbourhood || addr.city_district || addr.quarter || 'Manaus';
+      const city = addr.city || addr.town || addr.municipality || 'Manaus';
+
+      if (road) {
+        const addressText = venue && venue !== road
+          ? `${venue} (${road}${houseNumber ? ', ' + houseNumber : ''})`
+          : `${road}${houseNumber ? ', ' + houseNumber : ''}`;
+
+        return {
+          latitude: lat,
+          longitude: lng,
+          address: addressText,
+          neighborhood: suburb,
+          city: city
+        };
+      }
+    }
+  } catch (err) {
+    console.warn('Nominatim reverse geocode indisponível, tentando Photon...', err);
+  }
+
+  // 3. Provedor Secundário: Photon Geocoding API (Ultra-rápido)
+  try {
+    const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
+    const photonRes = await fetch(photonUrl);
+    if (photonRes.ok) {
+      const data = await photonRes.json();
+      const feat = data.features && data.features[0];
+      if (feat && feat.properties) {
+        const p = feat.properties;
+        const venue = p.name && p.name !== p.street ? p.name : '';
+        const road = p.street || p.name || '';
+        const houseNumber = cleanHouseNumber(p.housenumber);
+        const suburb = p.district || p.suburb || p.locality || 'Manaus';
+        const city = p.city || 'Manaus';
+
+        if (road && !/^\d{5}-?\d{3}$/.test(road)) {
+          const addressText = venue
+            ? `${venue} (${road}${houseNumber ? ', ' + houseNumber : ''})`
+            : `${road}${houseNumber ? ', ' + houseNumber : ''}`;
+
+          return {
+            latitude: lat,
+            longitude: lng,
+            address: addressText,
+            neighborhood: suburb,
+            city: city
+          };
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Photon reverse geocode indisponível...', err);
+  }
+
+  // 4. Provedor Terciário: BigDataCloud Client Reverse Geocode
+  try {
+    const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=pt`;
+    const bdcRes = await fetch(bdcUrl);
+    if (bdcRes.ok) {
+      const bdcData = await bdcRes.json();
+      const locality = bdcData.locality || bdcData.city || 'Manaus';
+      const suburb = bdcData.localityInfo?.administrative?.find((a: any) => a.adminLevel >= 8)?.name || locality;
 
       return {
         latitude: lat,
         longitude: lng,
-        address: `${road}${houseNumber}`,
+        address: `Localização Atual em ${suburb}`,
         neighborhood: suburb,
-        city: addr.city || 'Manaus'
+        city: bdcData.city || 'Manaus'
       };
     }
-  } catch {
-    // fallback
+  } catch (err) {
+    console.warn('BigDataCloud indisponível...', err);
   }
 
+  // Fallback seguro em Manaus
   return {
     latitude: lat,
     longitude: lng,
-    address: 'Localização Atual Selecionada',
-    neighborhood: 'Centro / Adrianópolis',
+    address: 'Localização Atual Detectada (GPS)',
+    neighborhood: 'Adrianópolis / Centro',
     city: 'Manaus'
   };
 }
