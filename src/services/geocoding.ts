@@ -181,16 +181,7 @@ function cleanHouseNumber(numStr?: string): string {
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<LocationCoordinates> {
-  // 1. Verificação de proximidade imediata (< 40 metros) com pontos de referência emblemáticos de Manaus
-  for (const place of POPULAR_MANAUS_PLACES) {
-    const dLat = Math.abs(place.coordinates.latitude - lat);
-    const dLng = Math.abs(place.coordinates.longitude - lng);
-    if (dLat < 0.0004 && dLng < 0.0004) {
-      return place.coordinates;
-    }
-  }
-
-  // 2. Provedor Primário: OpenStreetMap Nominatim com zoom detalhado de rua e número
+  // 1. Provedor Primário: OpenStreetMap Nominatim com zoom detalhado de rua e número
   try {
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1&zoom=18`;
     const res = await fetch(url, {
@@ -229,7 +220,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
     console.warn('Nominatim reverse geocode indisponível, tentando Photon...', err);
   }
 
-  // 3. Provedor Secundário: Photon Geocoding API (Ultra-rápido)
+  // 2. Provedor Secundário: Photon Geocoding API (Ultra-rápido)
   try {
     const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
     const photonRes = await fetch(photonUrl);
@@ -263,7 +254,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
     console.warn('Photon reverse geocode indisponível...', err);
   }
 
-  // 4. Provedor Terciário: BigDataCloud Client Reverse Geocode
+  // 3. Provedor Terciário: BigDataCloud Client Reverse Geocode
   try {
     const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=pt`;
     const bdcRes = await fetch(bdcUrl);
@@ -275,7 +266,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
       return {
         latitude: lat,
         longitude: lng,
-        address: `Localização Atual em ${suburb}`,
+        address: `Ponto em ${suburb}`,
         neighborhood: suburb,
         city: bdcData.city || 'Manaus'
       };
@@ -284,12 +275,12 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
     console.warn('BigDataCloud indisponível...', err);
   }
 
-  // Fallback seguro em Manaus
+  // Fallback real baseado exclusivamente nas coordenadas físicas
   return {
     latitude: lat,
     longitude: lng,
-    address: 'Localização Atual Detectada (GPS)',
-    neighborhood: 'Adrianópolis / Centro',
+    address: `Local Marcado (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+    neighborhood: 'Ponto no Mapa',
     city: 'Manaus'
   };
 }

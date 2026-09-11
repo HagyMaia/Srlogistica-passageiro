@@ -29,7 +29,8 @@ function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2:
 }
 
 export function usePassengerLocation() {
-  const [location, setLocation] = useState<LocationCoordinates>(DEFAULT_MANAUS_LOCATION);
+  const [location, setLocation] = useState<LocationCoordinates | null>(null);
+  const [hasRealGPS, setHasRealGPS] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
@@ -52,8 +53,8 @@ export function usePassengerLocation() {
         lat,
         lng
       );
-      // Se moveu menos de 20 metros, não precisa re-executar reverse geocode na API
-      if (dist < 20) return;
+      // Se moveu menos de 15 metros, não precisa re-executar reverse geocode na API
+      if (dist < 15) return;
     }
 
     isGeocodingInProgress.current = true;
@@ -62,15 +63,14 @@ export function usePassengerLocation() {
       const geoData = await reverseGeocode(lat, lng);
       lastGeocodedCoords.current = { lat, lng };
       setLocation((prev) => ({
-        ...prev,
         latitude: lat,
         longitude: lng,
-        address: geoData.address || prev.address,
-        neighborhood: geoData.neighborhood || prev.neighborhood,
-        city: geoData.city || prev.city
+        address: geoData.address,
+        neighborhood: geoData.neighborhood,
+        city: geoData.city
       }));
     } catch {
-      // mantém coordenadas
+      // mantém coordenadas reais
     } finally {
       isGeocodingInProgress.current = false;
       setIsResolvingAddress(false);
@@ -85,14 +85,19 @@ export function usePassengerLocation() {
       setPermissionGranted(true);
       setGpsError(null);
       setLoading(false);
+      setHasRealGPS(true);
       setIsLiveTracking(true);
       setAccuracy(Math.round(acc));
 
-      // Atualiza coordenadas no estado imediatamente
+      // Atualiza coordenadas no estado imediatamente com as coordenadas REAIS do aparelho
       setLocation((prev) => ({
-        ...prev,
         latitude,
-        longitude
+        longitude,
+        address: prev?.address && prev.latitude === latitude && prev.longitude === longitude
+          ? prev.address
+          : 'Identificando endereço da sua localização...',
+        neighborhood: prev?.neighborhood || '',
+        city: prev?.city || 'Manaus'
       }));
 
       // Faz o reverse geocode para buscar nome da rua e bairro
@@ -106,7 +111,7 @@ export function usePassengerLocation() {
     (err: GeolocationPositionError) => {
       console.warn('Erro GPS (Alta Precisão):', err.message);
 
-      // Se for timeout ou indisponível, tenta com precisão padrão (rede/wifi)
+      // Se for timeout ou sinal fraco, tenta obter modo padrão (rede/wifi)
       if (err.code === 3 || err.code === 2) {
         if (typeof navigator !== 'undefined' && navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
@@ -115,7 +120,7 @@ export function usePassengerLocation() {
               console.warn('Erro GPS (Modo Rede/Fallback):', fallbackErr.message);
               setLoading(false);
               setPermissionGranted(false);
-              setGpsError('Não foi possível obter a localização exata.');
+              setGpsError('Sinal GPS indisponível. Toque no mapa para marcar sua localização.');
             },
             { enableHighAccuracy: false, timeout: 15000, maximumAge: 30000 }
           );
@@ -127,8 +132,8 @@ export function usePassengerLocation() {
       setPermissionGranted(false);
       setGpsError(
         err.code === 1
-          ? 'Permissão de localização negada pelo usuário.'
-          : 'Sinal GPS fraco ou indisponível no momento.'
+          ? 'Permissão de localização não autorizada. Marque no mapa onde você está.'
+          : 'Sinal GPS fraco. Use o alfinete para marcar o local exato no mapa.'
       );
     },
     [handlePositionSuccess]
@@ -212,6 +217,7 @@ export function usePassengerLocation() {
 
   return {
     location,
+    hasRealGPS,
     accuracy,
     loading,
     isResolvingAddress,

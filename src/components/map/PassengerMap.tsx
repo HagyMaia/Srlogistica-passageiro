@@ -6,34 +6,55 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LocationCoordinates, DriverInfo } from '@/types';
 
-// Ícones Customizados Leaflet
-const createPassengerIcon = () =>
+// Alfinete Executivo de Embarque (Pickup Pin) com agulha de precisão e balão de endereço
+const createPickupAlfineteIcon = (label?: string) =>
   L.divIcon({
-    className: 'custom-passenger-pin',
+    className: 'custom-pickup-alfinete',
     html: `
-      <div class="relative flex items-center justify-center">
-        <div class="absolute w-10 h-10 rounded-full bg-emerald-500/25 animate-ping"></div>
-        <div class="relative w-7 h-7 rounded-full bg-emerald-500 border-2 border-white shadow-xl flex items-center justify-center text-white text-[12px] font-black">
-          ●
+      <div style="position: relative; width: 140px; height: 90px; margin-left: -70px; margin-top: -90px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none; user-select: none;">
+        <!-- Balão com Nome do Local ou Dica de Arraste -->
+        <div style="background: rgba(11, 18, 36, 0.96); color: #ffffff; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1.5px solid #10b981; margin-bottom: 6px; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; pointer-events: auto;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; animation: pulse 1.5s infinite;"></span>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${label || 'Ponto de Embarque'}</span>
         </div>
+
+        <!-- Cabeça do Alfinete Executivo -->
+        <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
+          <div style="position: absolute; width: 34px; height: 34px; border-radius: 50%; background: rgba(16, 185, 129, 0.35); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          <div style="width: 32px; height: 32px; border-radius: 10px 10px 10px 2px; transform: rotate(-45deg); background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: 2.5px solid #ffffff; box-shadow: 0 8px 18px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: #ffffff; transform: rotate(45deg); box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);"></div>
+          </div>
+        </div>
+
+        <!-- Agulha Metálica do Alfinete apontando para o chão exato -->
+        <div style="width: 2.5px; height: 16px; background: linear-gradient(to bottom, #059669, #0f172a); margin-top: -2px;"></div>
+        
+        <!-- Sombra no Chão (Ponto Zero do GPS) -->
+        <div style="width: 8px; height: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.5); filter: blur(1px); margin-top: -1px;"></div>
       </div>
     `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    iconSize: [0, 0],
+    iconAnchor: [0, 0]
   });
 
+// Alfinete de Destino (Flag)
 const createDestinationIcon = () =>
   L.divIcon({
     className: 'custom-destination-pin',
     html: `
-      <div class="relative flex items-center justify-center">
-        <div class="w-8 h-8 rounded-full bg-amber-500 border-2 border-dark-900 shadow-xl flex items-center justify-center text-dark-950 font-black text-xs">
+      <div style="position: relative; width: 120px; height: 80px; margin-left: -60px; margin-top: -80px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none;">
+        <div style="background: rgba(11, 18, 36, 0.95); color: #FFC800; padding: 3px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; border: 1.5px solid #FFC800; margin-bottom: 4px; box-shadow: 0 8px 20px rgba(0,0,0,0.4);">
+          🏁 Destino
+        </div>
+        <div style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #FFC800 0%, #F59E0B 100%); border: 2.5px solid #0B1224; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #0B1224; box-shadow: 0 6px 16px rgba(0,0,0,0.35);">
           🏁
         </div>
+        <div style="width: 2px; height: 14px; background: #0B1224; margin-top: -1px;"></div>
+        <div style="width: 6px; height: 3px; border-radius: 50%; background: rgba(0,0,0,0.5); filter: blur(1px);"></div>
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconSize: [0, 0],
+    iconAnchor: [0, 0]
   });
 
 const createCarIcon = (isAssigned = false) =>
@@ -49,7 +70,7 @@ const createCarIcon = (isAssigned = false) =>
       </div>
     `,
     iconSize: [32, 32],
-    iconAnchor: [16, 16],
+    iconAnchor: [16, 16]
   });
 
 function MapController({
@@ -102,6 +123,9 @@ export interface PassengerMapProps {
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
   accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
+  onOriginDragEnd?: (coords: [number, number]) => void;
+  isPinDraggable?: boolean;
+  pinLabel?: string;
   className?: string;
 }
 
@@ -113,15 +137,21 @@ export default function PassengerMap({
   nearbyDrivers = [],
   accuracy,
   onMapClick,
+  onOriginDragEnd,
+  isPinDraggable = true,
+  pinLabel,
   className = 'w-full h-full'
 }: PassengerMapProps) {
-  // Posição inicial: Manaus - Adrianópolis
+  // Posição padrão de Manaus como centro de visualização
   const defaultCenter: [number, number] = [-3.1037, -60.0125];
   const center: [number, number] = origin
     ? [origin.latitude, origin.longitude]
     : defaultCenter;
 
-  const passengerIcon = useMemo(() => createPassengerIcon(), []);
+  const alfineteIcon = useMemo(
+    () => createPickupAlfineteIcon(pinLabel || (origin?.address ? origin.address.split(',')[0] : 'Embarque Aqui')),
+    [pinLabel, origin?.address]
+  );
   const destinationIcon = useMemo(() => createDestinationIcon(), []);
   const assignedCarIcon = useMemo(() => createCarIcon(true), []);
   const roamingCarIcon = useMemo(() => createCarIcon(false), []);
@@ -176,11 +206,23 @@ export default function PassengerMap({
           />
         )}
 
-        {/* Marcador de Origem / Ponto de Embarque */}
+        {/* Alfinete de Embarque (Draggable e Interativo) */}
         {origin && (
           <Marker
             position={[origin.latitude, origin.longitude]}
-            icon={passengerIcon}
+            icon={alfineteIcon}
+            draggable={isPinDraggable}
+            eventHandlers={{
+              dragend: (e) => {
+                const marker = e.target;
+                const latlng = marker.getLatLng();
+                if (onOriginDragEnd) {
+                  onOriginDragEnd([latlng.lat, latlng.lng]);
+                } else if (onMapClick) {
+                  onMapClick([latlng.lat, latlng.lng]);
+                }
+              }
+            }}
           />
         )}
 

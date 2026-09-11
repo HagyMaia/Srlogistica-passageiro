@@ -100,6 +100,7 @@ export default function HomePage() {
   const router = useRouter();
   const {
     location,
+    hasRealGPS,
     accuracy,
     loading: gpsLoading,
     isResolvingAddress,
@@ -338,6 +339,9 @@ export default function HomePage() {
         accuracy ? `📍 GPS ativo (precisão ±${accuracy}m)` : '📍 GPS sincronizado em tempo real'
       );
       setTimeout(() => setGpsToastMsg(null), 3500);
+    } else {
+      setGpsToastMsg('📍 Buscando sinal do GPS do seu aparelho...');
+      setTimeout(() => setGpsToastMsg(null), 3000);
     }
   };
 
@@ -350,27 +354,55 @@ export default function HomePage() {
     }
   };
 
-  // Clique no mapa para selecionar ponto
-  const handleMapClick = useCallback(
+  // Quando o usuário arrasta o alfinete de embarque ou clica no mapa para marcar o local exato
+  const handleOriginPinMoved = useCallback(
     async ([lat, lng]: [number, number]) => {
       if (currentTrip && currentTrip.status !== 'IDLE') return;
 
-      const geo = await reverseGeocode(lat, lng);
-      const clickedPlace: PlaceSuggestion = {
-        id: `custom-point-${Date.now()}`,
-        title: geo.address || 'Ponto no Mapa',
-        subtitle: `${geo.neighborhood || 'Manaus'}`,
-        coordinates: geo
-      };
+      if (activeStep === 'SELECT_DESTINATION' && searchTarget === 'DESTINATION') {
+        const geo = await reverseGeocode(lat, lng);
+        const clickedPlace: PlaceSuggestion = {
+          id: `custom-dest-${Date.now()}`,
+          title: geo.address || 'Ponto de Destino',
+          subtitle: `${geo.neighborhood || 'Manaus'}`,
+          coordinates: geo
+        };
+        handleSelectPlace(clickedPlace);
+        return;
+      }
 
-      if (activeStep === 'SELECT_DESTINATION') {
-        handleSelectPlace(clickedPlace);
-      } else if (!destination) {
-        setSearchTarget('DESTINATION');
-        handleSelectPlace(clickedPlace);
+      // Posiciona o Alfinete de Embarque (Ponto de Partida)
+      setIsCustomOrigin(true);
+      const tempOrigin: LocationCoordinates = {
+        latitude: lat,
+        longitude: lng,
+        address: 'Identificando rua do local marcado...',
+        neighborhood: 'Ponto no Mapa',
+        city: 'Manaus'
+      };
+      setOrigin(tempOrigin);
+      setGpsToastMsg('📌 Alfinete posicionado! Identificando rua...');
+
+      try {
+        const geo = await reverseGeocode(lat, lng);
+        const resolvedOrigin: LocationCoordinates = {
+          latitude: lat,
+          longitude: lng,
+          address: geo.address,
+          neighborhood: geo.neighborhood,
+          city: geo.city
+        };
+        setOrigin(resolvedOrigin);
+        if (destination) {
+          await updateRouteCalculation(resolvedOrigin, destination);
+        }
+        setGpsToastMsg(`📍 Ponto de embarque: ${geo.address}`);
+        setTimeout(() => setGpsToastMsg(null), 3500);
+      } catch (e) {
+        // mantém coordenadas
       }
     },
-    [currentTrip, destination, activeStep, origin, location]
+    [currentTrip, activeStep, searchTarget, destination, setOrigin, updateRouteCalculation]
   );
 
   // Lista de categorias de corrida com tarifas calculadas
@@ -495,7 +527,7 @@ export default function HomePage() {
 
   return (
     <div className="relative flex flex-col h-dvh w-full overflow-hidden bg-slate-100 dark:bg-dark-950">
-      {/* MAPA INTERATIVO PRINCIPAL AO VIVO */}
+      {/* MAPA INTERATIVO PRINCIPAL AO VIVO COM ALFINETE DE EMBARQUE */}
       <div className="absolute inset-0 z-0">
         <PassengerMapWrapper
           origin={origin || location}
@@ -504,7 +536,10 @@ export default function HomePage() {
           driver={currentTrip?.driver}
           nearbyDrivers={onlineDrivers}
           accuracy={accuracy}
-          onMapClick={handleMapClick}
+          onMapClick={handleOriginPinMoved}
+          onOriginDragEnd={handleOriginPinMoved}
+          isPinDraggable={true}
+          pinLabel={origin?.address || location?.address || 'Alfinete de Embarque'}
           className="w-full h-full"
         />
       </div>
@@ -567,6 +602,14 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+
+        {/* Dica Flutuante: Alfinete de Embarque Interativo */}
+        {!destination && activeStep === 'MAP' && (
+          <div className="pointer-events-auto self-center flex items-center gap-2 rounded-full bg-dark-950/90 text-white text-[10.5px] font-bold px-3.5 py-1.5 shadow-2xl border border-emerald-500/50 backdrop-blur-md animate-in fade-in slide-in-from-top-1">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+            <span>Toque no mapa ou arraste o alfinete 📌 para marcar o local exato</span>
+          </div>
+        )}
 
         {/* Notificação Flutuante de Status do GPS */}
         {gpsToastMsg && (
@@ -717,10 +760,10 @@ export default function HomePage() {
                         ) : (
                           <div className="mt-0.5 space-y-0.5">
                             <p className="text-xs font-black text-slate-900 dark:text-white leading-snug break-words">
-                              {origin?.address || location?.address || 'Detectando endereço...'}
+                              {origin?.address || location?.address || (gpsLoading ? '📍 Obtendo sinal GPS do aparelho...' : 'Toque no mapa para posicionar o alfinete 📌')}
                             </p>
                             <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400">
-                              {origin?.neighborhood || location?.neighborhood || 'Bairro'} • {origin?.city || 'Manaus'}
+                              {origin?.neighborhood || location?.neighborhood || 'Local Marcado'} • {origin?.city || 'Manaus'}
                             </p>
                           </div>
                         )}

@@ -11,6 +11,9 @@ export interface PassengerMapProps {
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
   accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
+  onOriginDragEnd?: (coords: [number, number]) => void;
+  isPinDraggable?: boolean;
+  pinLabel?: string;
   className?: string;
 }
 
