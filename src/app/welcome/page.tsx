@@ -100,26 +100,31 @@ export default function WelcomePage() {
           </Button>
         </Link>
 
+        {/* Botão de Destaque: Instalar Aplicativo */}
+        <button
+          type="button"
+          onClick={handleInstallApp}
+          className="flex w-full items-center justify-center gap-2.5 h-11 px-4 rounded-2xl bg-gradient-to-r from-emerald-500/20 to-brand/20 border border-brand/40 hover:border-brand text-white hover:text-brand font-black text-xs shadow-lg backdrop-blur-md transition active:scale-[0.98] group"
+        >
+          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-brand text-dark-950 font-black shadow-sm group-hover:scale-110 transition">
+            <Download size={13} />
+          </div>
+          <span>Instalar Aplicativo no Celular</span>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand/20 text-brand font-bold border border-brand/30">
+            Grátis
+          </span>
+        </button>
+
         <Link href="/login" className="block">
           <Button
             variant="ghost"
             size="lg"
             full
-            className="border border-white/15 bg-white/5 hover:bg-white/10 text-white font-bold text-xs h-11 rounded-2xl backdrop-blur-md transition active:scale-[0.99]"
+            className="border border-white/15 bg-white/5 hover:bg-white/10 text-white font-bold text-xs h-10 rounded-2xl backdrop-blur-md transition active:scale-[0.99]"
           >
             Já tenho uma conta
           </Button>
         </Link>
-
-        {/* Botão sutil de instalação */}
-        <button
-          type="button"
-          onClick={handleInstallApp}
-          className="flex w-full items-center justify-center gap-1.5 text-slate-400 hover:text-brand py-1.5 text-[11px] font-medium transition"
-        >
-          <Smartphone size={13} />
-          <span>Instalar / Baixar App no Celular</span>
-        </button>
 
         <div className="pt-2 text-center text-[10px] text-slate-500 font-medium">
           SR Logística & Transporte • Manaus - AM
@@ -139,30 +144,33 @@ export default function WelcomePage() {
                 onClick={() => setIsInstallModalOpen(false)}
                 className="text-slate-400 hover:text-white text-xs font-bold px-2 py-1"
               >
-                Fechar
+                ✕
               </button>
             </div>
 
             <div className="space-y-3 text-xs text-slate-300">
               <div className="p-3.5 rounded-2xl bg-brand/10 border border-brand/20 space-y-1.5">
                 <h4 className="font-black text-white text-xs flex items-center gap-1.5">
-                  🤖 Instalação Direta (Android):
+                  🤖 Instalação Direta no Chrome:
                 </h4>
                 <p className="text-[11px] text-slate-300">
-                  Toque no menu <strong>⋮ (três pontinhos)</strong> do Google Chrome e selecione <strong>"Instalar aplicativo"</strong>.
+                  Toque no menu <strong>⋮ (três pontinhos)</strong> no canto superior do navegador e clique em <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar à tela inicial"</strong>.
                 </p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-dark-800 border border-dark-700 space-y-2">
                 <h4 className="font-black text-white text-xs flex items-center gap-1.5">
-                  📥 Download do APK:
+                  📥 Download do Pacote APK (Android):
                 </h4>
+                <p className="text-[11px] text-slate-400">
+                  Baixe e instale o pacote direto oficial do SR Passageiro:
+                </p>
                 <a
                   href="/sr-passageiro.apk"
                   download="sr-passageiro.apk"
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2 text-xs font-black text-dark-950 shadow-md hover:bg-brand-hover transition"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand py-2.5 text-xs font-black text-dark-950 shadow-md hover:bg-brand-hover transition active:scale-95"
                 >
-                  <Download size={14} /> Baixar sr-passageiro.apk
+                  <Download size={15} /> Baixar sr-passageiro.apk
                 </a>
               </div>
             </div>
@@ -175,7 +183,7 @@ export default function WelcomePage() {
               onClick={() => setIsInstallModalOpen(false)}
               className="py-2 font-bold border-dark-700 text-slate-300"
             >
-              Fechar
+              Concluir
             </Button>
           </div>
         </div>
