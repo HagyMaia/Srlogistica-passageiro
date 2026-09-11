@@ -2,17 +2,23 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Navigation,
   ArrowRight,
   Smartphone,
-  Download
+  Download,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
 
 export default function WelcomePage() {
+  const router = useRouter();
+  const { loginAsGuest } = useAuth();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+  const [isLoggingInQuick, setIsLoggingInQuick] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -25,6 +31,12 @@ export default function WelcomePage() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
+
+  const handleQuickEnter = async () => {
+    setIsLoggingInQuick(true);
+    await loginAsGuest();
+    router.push('/');
+  };
 
   const handleInstallApp = async () => {
     if (deferredPrompt) {
@@ -87,7 +99,7 @@ export default function WelcomePage() {
       </main>
 
       {/* Ações Principais no Rodapé */}
-      <footer className="relative z-10 p-6 pt-2 max-w-sm mx-auto w-full space-y-3">
+      <footer className="relative z-10 p-6 pt-2 max-w-sm mx-auto w-full space-y-2.5">
         <Link href="/cadastro" className="block">
           <Button
             variant="primary"
@@ -99,6 +111,17 @@ export default function WelcomePage() {
             <ArrowRight size={18} />
           </Button>
         </Link>
+
+        {/* Botão de Entrada Rápida Direta no App */}
+        <button
+          type="button"
+          onClick={handleQuickEnter}
+          disabled={isLoggingInQuick}
+          className="flex w-full items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white hover:text-brand font-black text-xs shadow-lg backdrop-blur-md transition active:scale-[0.98]"
+        >
+          <Zap size={14} className="text-amber-400 fill-amber-400" />
+          <span>{isLoggingInQuick ? 'Iniciando Sessão...' : '⚡ Entrar Direto no Aplicativo'}</span>
+        </button>
 
         {/* Botão de Destaque: Instalar Aplicativo */}
         <button
@@ -120,13 +143,13 @@ export default function WelcomePage() {
             variant="ghost"
             size="lg"
             full
-            className="border border-white/15 bg-white/5 hover:bg-white/10 text-white font-bold text-xs h-10 rounded-2xl backdrop-blur-md transition active:scale-[0.99]"
+            className="border border-white/10 bg-transparent hover:bg-white/5 text-slate-300 hover:text-white font-bold text-xs h-9 rounded-2xl backdrop-blur-md transition active:scale-[0.99]"
           >
             Já tenho uma conta
           </Button>
         </Link>
 
-        <div className="pt-2 text-center text-[10px] text-slate-500 font-medium">
+        <div className="pt-1 text-center text-[10px] text-slate-400 font-medium">
           SR Logística & Transporte • Manaus - AM
         </div>
       </footer>

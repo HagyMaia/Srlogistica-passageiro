@@ -11,19 +11,28 @@ import {
   Globe,
   MessageSquare,
   Clock,
-  ExternalLink
+  ExternalLink,
+  Zap
 } from 'lucide-react';
 import { Button, Input, Field } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { SR_SUPPORT_CONFIG } from '@/types';
+import { useAuth } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
+  const { loginAsGuest } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingApprovalUser, setPendingApprovalUser] = useState<{ email: string; name: string } | null>(null);
+
+  const handleQuickLogin = async () => {
+    setLoading(true);
+    await loginAsGuest();
+    window.location.href = '/';
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,6 +193,17 @@ export default function LoginPage() {
           <Button type="submit" size="xl" full disabled={loading} className="mt-2">
             {loading ? 'Entrando...' : 'Entrar no App'} <ArrowRight size={18} />
           </Button>
+
+          {/* Botão de Acesso Rápido Direto */}
+          <button
+            type="button"
+            onClick={handleQuickLogin}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-900 dark:text-amber-300 font-black text-xs shadow-sm transition active:scale-[0.98]"
+          >
+            <Zap size={14} className="text-amber-500 fill-amber-500" />
+            <span>⚡ Entrar Direto (Acesso Rápido / Demonstração)</span>
+          </button>
         </form>
       </div>
 

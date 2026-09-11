@@ -96,7 +96,7 @@ const FAVORITE_DESTINATIONS = [
 ];
 
 export default function HomePage() {
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, loginAsGuest } = useAuth();
   const router = useRouter();
   const {
     location,
@@ -171,12 +171,12 @@ export default function HomePage() {
 
   const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
 
-  // Redireciona para /welcome se não autenticado
+  // Garante que o passageiro consiga navegar e solicitar corridas sem ser expulso
   useEffect(() => {
     if (!authLoading && !user) {
-      router.push('/welcome');
+      loginAsGuest();
     }
-  }, [user, authLoading, router]);
+  }, [user, authLoading, loginAsGuest]);
 
   // Carrega agendamentos
   useEffect(() => {

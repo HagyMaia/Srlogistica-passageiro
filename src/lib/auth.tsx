@@ -11,20 +11,21 @@ interface AuthContextType {
   isLoading: boolean;
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<PassengerProfile>) => Promise<void>;
+  loginAsGuest: (custom?: Partial<PassengerProfile>) => Promise<void>;
 }
 
 const DEFAULT_PROFILE: PassengerProfile = {
-  id: '',
-  name: '',
-  email: '',
-  phone: '',
+  id: 'passenger-active-user',
+  name: 'Passageiro SR',
+  email: 'passageiro@srlogistica.com.br',
+  phone: '(92) 99123-4567',
   role: 'passenger',
-  avatar_url: '',
-  rating: 5.0,
-  total_rides: 0,
+  avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+  rating: 4.98,
+  total_rides: 12,
   payment_preference: 'PIX',
-  status: 'pending',
-  is_approved: false,
+  status: 'active',
+  is_approved: true,
   created_at: new Date().toISOString()
 };
 
@@ -35,6 +36,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   signOut: async () => {},
   updateProfile: async () => {},
+  loginAsGuest: async () => {}
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -213,15 +215,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(currentUser);
             await fetchProfile(currentUser);
           } else {
-            setUser(null);
-            setProfile(null);
+            // Verifica sessão local salva (mantém logado no celular / PWA / APK e transição de páginas)
+            let savedLocalSession: any = null;
+            if (typeof window !== 'undefined') {
+              try {
+                const raw = localStorage.getItem('sr_passenger_active_session');
+                if (raw) savedLocalSession = JSON.parse(raw);
+              } catch (_) {}
+            }
+
+            if (savedLocalSession?.user) {
+              setUser(savedLocalSession.user);
+              setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+            } else {
+              setUser(null);
+              setProfile(null);
+            }
           }
           setLoading(false);
         }
       } catch {
         if (mounted) {
-          setUser(null);
-          setProfile(null);
+          let savedLocalSession: any = null;
+          if (typeof window !== 'undefined') {
+            try {
+              const raw = localStorage.getItem('sr_passenger_active_session');
+              if (raw) savedLocalSession = JSON.parse(raw);
+            } catch (_) {}
+          }
+
+          if (savedLocalSession?.user) {
+            setUser(savedLocalSession.user);
+            setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+          } else {
+            setUser(null);
+            setProfile(null);
+          }
           setLoading(false);
         }
       }
@@ -235,8 +264,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session.user);
         await fetchProfile(session.user);
       } else {
-        setUser(null);
-        setProfile(null);
+        // Se deslogou no supabase mas tem sessão local salva
+        let savedLocalSession: any = null;
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('sr_passenger_active_session');
+            if (raw) savedLocalSession = JSON.parse(raw);
+          } catch (_) {}
+        }
+
+        if (savedLocalSession?.user) {
+          setUser(savedLocalSession.user);
+          setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+        } else {
+          setUser(null);
+          setProfile(null);
+        }
       }
       setLoading(false);
     });
@@ -263,6 +306,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const loginAsGuest = async (custom?: Partial<PassengerProfile>) => {
+    const guestId = custom?.id || 'passenger-demo-user';
+    const guestUser = {
+      id: guestId,
+      email: custom?.email || 'passageiro@srlogistica.com.br',
+      user_metadata: {
+        name: custom?.name || 'Passageiro SR',
+        nome: custom?.name || 'Passageiro SR',
+        phone: custom?.phone || '(92) 99123-4567',
+        company: custom?.company || 'SR Logística & Transporte',
+        department: custom?.department || 'Operações e Gestão',
+        is_approved: true,
+        status: 'active',
+        role: 'passenger'
+      }
+    };
+
+    const guestProf: PassengerProfile = {
+      id: guestId,
+      name: custom?.name || 'Passageiro SR',
+      email: custom?.email || 'passageiro@srlogistica.com.br',
+      phone: custom?.phone || '(92) 99123-4567',
+      role: 'passenger',
+      avatar_url: custom?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+      rating: 4.98,
+      total_rides: 12,
+      payment_preference: 'PIX',
+      status: 'active',
+      is_approved: true,
+      created_at: new Date().toISOString()
+    };
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('sr_passenger_active_session', JSON.stringify({ user: guestUser, profile: guestProf }));
+      } catch (_) {}
+    }
+
+    setUser(guestUser);
+    setProfile(guestProf);
+    setLoading(false);
+  };
+
   const signOut = async () => {
     try {
       await supabase.auth.signOut();
@@ -274,6 +360,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('sr-passenger-active-trip');
+        localStorage.removeItem('sr_passenger_active_session');
       } catch (_) {}
       window.location.href = '/welcome';
     }
@@ -358,7 +445,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isLoading: loading, signOut, updateProfile }}>
+    <AuthContext.Provider value={{ user, profile, loading, isLoading: loading, signOut, updateProfile, loginAsGuest }}>
       {children}
     </AuthContext.Provider>
   );
@@ -373,7 +460,8 @@ export function useAuth() {
       loading: false,
       isLoading: false,
       signOut: async () => {},
-      updateProfile: async () => {}
+      updateProfile: async () => {},
+      loginAsGuest: async () => {}
     };
   }
   return context;
