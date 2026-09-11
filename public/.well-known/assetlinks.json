@@ -1,8 +1,12 @@
-[{
-      "relation": ["delegate_permission/common.handle_all_urls"],
-      "target": {
-        "namespace": "android_app",
-        "package_name": "app.vercel.srlogpassageiro.twa",
-        "sha256_cert_fingerprints": ["12:E8:89:14:71:56:BD:F3:AF:42:0B:57:7B:A8:BA:CA:3F:DC:D9:10:EB:36:E4:08:1E:54:4E:AF:A1:C1:9E:55"]
-      }
-    }]
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.srlogpassageiro.twa",
+      "sha256_cert_fingerprints": [
+        "4B:CF:46:5C:3E:68:C0:78:5E:24:F8:55:B4:73:46:20:67:D8:B4:90:87:41:15:38:EC:7E:EE:D3:C2:18:BC:55"
+      ]
+    }
+  }
+]
