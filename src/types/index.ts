@@ -73,8 +73,8 @@ export const SR_SUPPORT_CONFIG = {
   phone2Raw: '5592991306160',
   pixKey: '52967828000117',
   pixKeyFormatted: '52.967.828/0001-17',
-  websiteUrl: 'https://srlogisticatrasporte.vercel.app/',
-  adminUrl: 'https://srlogisticatrasporte.vercel.app/admin.html',
+  websiteUrl: 'https://www.srlogisticatrasporte.com.br/',
+  adminUrl: 'https://www.srlogisticatrasporte.com.br/admin.html',
   city: 'Manaus - AM',
   emergencyPolice: '190',
   emergencySamu: '192'

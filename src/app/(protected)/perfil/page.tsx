@@ -532,7 +532,7 @@ export default function PerfilPage() {
             <div className="text-left">
               <span className="text-sm font-bold block">Portal Oficial SR Logística</span>
               <p className="text-[10px] text-slate-400 font-normal">
-                srlogisticatrasporte.vercel.app
+                www.srlogisticatrasporte.com.br
               </p>
             </div>
           </div>

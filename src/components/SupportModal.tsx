@@ -160,7 +160,7 @@ export function SupportModal({ isOpen, onClose }: SupportModalProps) {
             <div>
               <span className="text-[10px] font-bold text-slate-400 block uppercase">Site Oficial</span>
               <span className="text-xs font-black text-slate-900 dark:text-white">
-                srlogisticatrasporte.vercel.app
+                www.srlogisticatrasporte.com.br
               </span>
             </div>
           </div>
