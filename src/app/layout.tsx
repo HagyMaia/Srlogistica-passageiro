@@ -4,6 +4,7 @@ import { AuthProvider } from '@/lib/auth';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import BottomNav from '@/components/BottomNav';
+import { PWARegister } from '@/components/PWARegister';
 
 export const metadata: Metadata = {
   title: 'SR Logística - App do Passageiro',
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans antialiased bg-[color:var(--bg)] dark:bg-dark-950 transition-colors min-h-dvh select-none text-slate-900 dark:text-slate-100">
         <ThemeProvider>
           <AuthProvider>
+            <PWARegister />
             <div className="mx-auto min-h-dvh max-w-md w-full flex flex-col relative bg-[color:var(--surface)] dark:bg-dark-900 shadow-2xl overflow-x-hidden pb-16">
               {children}
               <BottomNav />
