@@ -3,12 +3,13 @@
 import dynamic from 'next/dynamic';
 import type { LocationCoordinates, DriverInfo } from '@/types';
 
-interface PassengerMapProps {
+export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
   driver?: DriverInfo | null;
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
+  accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
   className?: string;
 }

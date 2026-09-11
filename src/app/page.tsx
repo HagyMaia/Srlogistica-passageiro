@@ -97,7 +97,18 @@ const FAVORITE_DESTINATIONS = [
 export default function HomePage() {
   const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
-  const { location, refreshLocation } = usePassengerLocation();
+  const {
+    location,
+    accuracy,
+    loading: gpsLoading,
+    isLiveTracking,
+    permissionGranted,
+    gpsError,
+    refreshLocation
+  } = usePassengerLocation();
+  const [isCustomOrigin, setIsCustomOrigin] = useState(false);
+  const [gpsToastMsg, setGpsToastMsg] = useState<string | null>(null);
+
   const {
     currentTrip,
     origin,
@@ -165,12 +176,12 @@ export default function HomePage() {
     }
   }, [user, loadScheduledTrips]);
 
-  // Inicializa origem com a localização do passageiro se não estiver definida
+  // Sincroniza origem com o GPS em tempo real continuamente (se não foi customizado manualmente)
   useEffect(() => {
-    if (location && !origin) {
+    if (location && !isCustomOrigin) {
       setOrigin(location);
     }
-  }, [location, origin, setOrigin]);
+  }, [location, isCustomOrigin, setOrigin]);
 
   // Busca de endereços com debounce
   useEffect(() => {
@@ -225,6 +236,7 @@ export default function HomePage() {
     const selectedCoords = place.coordinates;
 
     if (searchTarget === 'ORIGIN') {
+      setIsCustomOrigin(true);
       setOrigin(selectedCoords);
       if (destination) {
         await updateRouteCalculation(selectedCoords, destination);
@@ -262,6 +274,8 @@ export default function HomePage() {
 
   // Usar GPS atual como Origem
   const handleUseCurrentLocationAsOrigin = async () => {
+    setIsCustomOrigin(false);
+    refreshLocation();
     if (location) {
       setOrigin(location);
       if (destination) {
@@ -271,14 +285,31 @@ export default function HomePage() {
         setSearchTarget('DESTINATION');
         setSearchQuery('');
       }
-    } else {
-      refreshLocation();
+      setGpsToastMsg('📍 Localização GPS sincronizada com sucesso!');
+      setTimeout(() => setGpsToastMsg(null), 3000);
+    }
+  };
+
+  // Recentralizar GPS em tempo real
+  const handleRecenterGPS = () => {
+    setIsCustomOrigin(false);
+    refreshLocation();
+    if (location) {
+      setOrigin(location);
+      if (destination) {
+        updateRouteCalculation(location, destination);
+      }
+      setGpsToastMsg(
+        accuracy ? `📍 GPS ativo (precisão ±${accuracy}m)` : '📍 GPS sincronizado em tempo real'
+      );
+      setTimeout(() => setGpsToastMsg(null), 3500);
     }
   };
 
   // Inverter Origem e Destino
   const handleSwapLocations = async () => {
     if (origin && destination) {
+      setIsCustomOrigin(true);
       swapOriginAndDestination();
       await updateRouteCalculation(destination, origin);
     }
@@ -437,63 +468,88 @@ export default function HomePage() {
           routeCoordinates={routeCoordinates}
           driver={currentTrip?.driver}
           nearbyDrivers={onlineDrivers}
+          accuracy={accuracy}
           onMapClick={handleMapClick}
           className="w-full h-full"
         />
       </div>
 
       {/* HEADER EXECUTIVO FLUTUANTE SUPERIOR */}
-      <div className="absolute top-3 inset-x-3 z-20 flex items-center justify-between pointer-events-none">
-        {/* Card do Usuário + Indicador de Motoristas Online */}
-        <Link
-          href="/perfil"
-          className="pointer-events-auto flex items-center gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-2 pr-3.5 shadow-2xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl transition hover:scale-[1.02] active:scale-95"
-        >
-          <div className="relative">
-            <img
-              src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
-              alt="Avatar"
-              className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
-            />
-            <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-white dark:border-dark-900" />
-            </span>
-          </div>
-
-          <div className="flex flex-col">
-            <div className="flex items-center gap-1">
-              <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
-                {profile?.name?.split(' ')[0] || 'Passageiro'}
-              </span>
-              <span className="text-[10px] font-bold text-amber-500 flex items-center">
-                ★ {profile?.rating || 4.98}
+      <div className="absolute top-3 inset-x-3 z-20 flex flex-col gap-2 pointer-events-none">
+        <div className="flex items-center justify-between">
+          {/* Card do Usuário + Indicador de Motoristas Online */}
+          <Link
+            href="/perfil"
+            className="pointer-events-auto flex items-center gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-2 pr-3.5 shadow-2xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl transition hover:scale-[1.02] active:scale-95"
+          >
+            <div className="relative">
+              <img
+                src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
+                alt="Avatar"
+                className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
+              />
+              <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 border border-white dark:border-dark-900" />
               </span>
             </div>
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
-              {onlineDrivers.length > 0 ? `${onlineDrivers.length} motorista(s) online` : 'SR Logística'}
-            </span>
+
+            <div className="flex flex-col">
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
+                  {profile?.name?.split(' ')[0] || 'Passageiro'}
+                </span>
+                <span className="text-[10px] font-bold text-amber-500 flex items-center">
+                  ★ {profile?.rating || 4.98}
+                </span>
+              </div>
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                {onlineDrivers.length > 0 ? `${onlineDrivers.length} motorista(s) online` : 'SR Logística'}
+              </span>
+            </div>
+          </Link>
+
+          {/* Botões de Ação Rápida: Ajuda e GPS */}
+          <div className="pointer-events-auto flex items-center gap-2">
+            <button
+              onClick={() => setIsSupportOpen(true)}
+              className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"
+              title="Central de Ajuda & WhatsApp 24h"
+            >
+              <HelpCircle size={18} className="text-blue-500" />
+            </button>
+
+            <button
+              onClick={handleRecenterGPS}
+              className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition ${
+                gpsLoading ? 'animate-pulse' : ''
+              }`}
+              title="Centralizar Meu GPS em Tempo Real"
+            >
+              <Crosshair size={18} className="text-brand-600 dark:text-brand" />
+            </button>
           </div>
-        </Link>
-
-        {/* Botões de Ação Rápida: Ajuda e GPS */}
-        <div className="pointer-events-auto flex items-center gap-2">
-          <button
-            onClick={() => setIsSupportOpen(true)}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"
-            title="Central de Ajuda & WhatsApp 24h"
-          >
-            <HelpCircle size={18} className="text-blue-500" />
-          </button>
-
-          <button
-            onClick={refreshLocation}
-            className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-700 dark:text-slate-200 shadow-xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl active:scale-95 transition"
-            title="Centralizar GPS"
-          >
-            <Crosshair size={18} className="text-brand-600 dark:text-brand" />
-          </button>
         </div>
+
+        {/* Notificação Flutuante de Status do GPS */}
+        {gpsToastMsg && (
+          <div className="pointer-events-auto self-center rounded-full bg-dark-900/90 text-white text-[11px] font-bold px-3.5 py-1.5 shadow-xl border border-brand/40 backdrop-blur-md animate-in fade-in slide-in-from-top-2">
+            {gpsToastMsg}
+          </div>
+        )}
+
+        {/* Alerta caso o GPS tenha sido negado no navegador */}
+        {permissionGranted === false && gpsError && (
+          <div className="pointer-events-auto flex items-center justify-between rounded-2xl bg-amber-500/95 text-dark-950 px-3 py-2 text-xs font-bold shadow-xl border border-amber-400 backdrop-blur-md animate-in fade-in">
+            <span>⚠️ Ative a localização nas permissões do navegador para precisão total.</span>
+            <button
+              onClick={handleRecenterGPS}
+              className="ml-2 px-2 py-0.5 rounded-lg bg-dark-950 text-white text-[10px] uppercase font-black"
+            >
+              Tentar
+            </button>
+          </div>
+        )}
       </div>
 
       {/* PAINEL INFERIOR INTERATIVO E INTELIGENTE */}

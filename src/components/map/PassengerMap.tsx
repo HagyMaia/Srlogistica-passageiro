@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LocationCoordinates, DriverInfo } from '@/types';
@@ -12,8 +12,8 @@ const createPassengerIcon = () =>
     className: 'custom-passenger-pin',
     html: `
       <div class="relative flex items-center justify-center">
-        <div class="absolute w-8 h-8 rounded-full bg-emerald-500/30 animate-ping"></div>
-        <div class="w-7 h-7 rounded-full bg-emerald-500 border-2 border-white shadow-xl flex items-center justify-center text-white text-[12px] font-black">
+        <div class="absolute w-10 h-10 rounded-full bg-emerald-500/25 animate-ping"></div>
+        <div class="relative w-7 h-7 rounded-full bg-emerald-500 border-2 border-white shadow-xl flex items-center justify-center text-white text-[12px] font-black">
           ●
         </div>
       </div>
@@ -76,7 +76,7 @@ function MapController({
       ]);
       map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
     } else if (origin) {
-      map.setView([origin.latitude, origin.longitude], 15, { animate: true });
+      map.panTo([origin.latitude, origin.longitude], { animate: true, duration: 0.8 });
     }
   }, [origin, destination, routeCoordinates, map]);
 
@@ -94,12 +94,13 @@ function MapClickHandler({ onMapClick }: { onMapClick?: (coords: [number, number
   return null;
 }
 
-interface PassengerMapProps {
+export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
   driver?: DriverInfo | null;
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
+  accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
   className?: string;
 }
@@ -110,6 +111,7 @@ export default function PassengerMap({
   routeCoordinates = [],
   driver,
   nearbyDrivers = [],
+  accuracy,
   onMapClick,
   className = 'w-full h-full'
 }: PassengerMapProps) {
@@ -158,6 +160,20 @@ export default function PassengerMap({
               pathOptions={{ color: '#FFC800', weight: 4, opacity: 1 }}
             />
           </>
+        )}
+
+        {/* Raio de Precisão do GPS em Tempo Real */}
+        {origin && accuracy && accuracy > 0 && accuracy < 200 && (
+          <Circle
+            center={[origin.latitude, origin.longitude]}
+            radius={accuracy}
+            pathOptions={{
+              color: '#10b981',
+              fillColor: '#10b981',
+              fillOpacity: 0.12,
+              weight: 1
+            }}
+          />
         )}
 
         {/* Marcador de Origem / Ponto de Embarque */}
