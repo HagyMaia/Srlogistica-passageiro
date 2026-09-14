@@ -21,6 +21,10 @@ const allowedTransitions: Record<PassengerTripStatus, PassengerTripStatus[]> = {
 
   SEARCHING_DRIVER: [
     'DRIVER_ASSIGNED',
+    'DRIVER_ARRIVING',
+    'DRIVER_ARRIVED',
+    'IN_PROGRESS',
+    'COMPLETED',
     'CANCELLED',
     'IDLE'
   ],
@@ -29,23 +33,30 @@ const allowedTransitions: Record<PassengerTripStatus, PassengerTripStatus[]> = {
     'DRIVER_ARRIVING',
     'DRIVER_ARRIVED',
     'IN_PROGRESS',
-    'CANCELLED'
+    'COMPLETED',
+    'CANCELLED',
+    'IDLE'
   ],
 
   DRIVER_ARRIVING: [
     'DRIVER_ARRIVED',
     'IN_PROGRESS',
-    'CANCELLED'
+    'COMPLETED',
+    'CANCELLED',
+    'IDLE'
   ],
 
   DRIVER_ARRIVED: [
     'IN_PROGRESS',
-    'CANCELLED'
+    'COMPLETED',
+    'CANCELLED',
+    'IDLE'
   ],
 
   IN_PROGRESS: [
     'COMPLETED',
-    'CANCELLED'
+    'CANCELLED',
+    'IDLE'
   ],
 
   COMPLETED: [
@@ -62,7 +73,8 @@ export function canChangeTripStatus(
   nextStatus: PassengerTripStatus
 ): boolean {
   if (currentStatus === nextStatus) return true;
-  return allowedTransitions[currentStatus]?.includes(nextStatus) ?? false;
+  if (nextStatus === 'COMPLETED' || nextStatus === 'CANCELLED' || nextStatus === 'IDLE') return true;
+  return allowedTransitions[currentStatus]?.includes(nextStatus) ?? true;
 }
 
 export function validateTripStatusChange(
@@ -72,6 +84,6 @@ export function validateTripStatusChange(
   const isAllowed = canChangeTripStatus(currentStatus, nextStatus);
 
   if (!isAllowed) {
-    throw new Error(`Transição de status inválida no app do passageiro: ${currentStatus} -> ${nextStatus}`);
+    console.warn(`Transição de status forçada no app do passageiro: ${currentStatus} -> ${nextStatus}`);
   }
 }

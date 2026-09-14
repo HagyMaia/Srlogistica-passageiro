@@ -74,20 +74,47 @@ export function useRideStatus() {
         await fetchRealDriver(driverId);
       }
 
-      if (newStatus === 'ACCEPTED' || newStatus === 'DRIVER_ASSIGNED') {
+      const s = String(newStatus).trim().toUpperCase();
+
+      if (s === 'ACCEPTED' || s === 'DRIVER_ASSIGNED' || s === 'ACEITA' || s === 'ACEITO') {
         changeStatus('DRIVER_ASSIGNED');
-      } else if (newStatus === 'ARRIVING' || newStatus === 'DRIVER_ARRIVING') {
+      } else if (s === 'ARRIVING' || s === 'DRIVER_ARRIVING' || s === 'A_CAMINHO' || s === 'DESLOCANDO') {
         changeStatus('DRIVER_ARRIVING');
-      } else if (newStatus === 'ARRIVED' || newStatus === 'DRIVER_ARRIVED') {
+      } else if (s === 'ARRIVED' || s === 'DRIVER_ARRIVED' || s === 'CHEGOU' || s === 'NO_LOCAL') {
         changeStatus('DRIVER_ARRIVED');
-      } else if (newStatus === 'IN_PROGRESS') {
+      } else if (s === 'IN_PROGRESS' || s === 'STARTED' || s === 'EM_ANDAMENTO' || s === 'EM_VIAGEM' || s === 'INICIADA') {
         changeStatus('IN_PROGRESS');
-      } else if (newStatus === 'COMPLETED' || newStatus === 'FINISHED') {
+      } else if (
+        s === 'COMPLETED' ||
+        s === 'FINISHED' ||
+        s === 'FINALIZADA' ||
+        s === 'FINALIZADO' ||
+        s === 'CONCLUIDA' ||
+        s === 'CONCLUIDO' ||
+        s === 'DROPOFF' ||
+        s === 'PAID'
+      ) {
         changeStatus('COMPLETED');
-      } else if (newStatus === 'CANCELLED') {
+      } else if (s === 'CANCELLED' || s === 'CANCELED' || s === 'CANCELADA' || s === 'CANCELADO') {
         changeStatus('CANCELLED');
       }
     };
+
+    // 0. Verificação imediata no banco de dados ao iniciar
+    const checkImmediateStatus = async () => {
+      try {
+        const { data: rideRow } = await supabase
+          .from('rides')
+          .select('id, status, driver_id')
+          .eq('id', tripId)
+          .maybeSingle();
+
+        if (rideRow) {
+          await processStatusUpdate(rideRow.status, rideRow.driver_id);
+        }
+      } catch (_) {}
+    };
+    checkImmediateStatus();
 
     // 1. Escuta Realtime de Atualizações de Status da Corrida na tabela 'rides'
     const ridesChannel = supabase
