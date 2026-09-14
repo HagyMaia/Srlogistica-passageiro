@@ -89,10 +89,10 @@ export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModal
                 <img
                   src={driver.avatar_url}
                   alt={driverDisplayName}
-                  className="h-11 w-11 rounded-2xl object-cover border-2 border-brand"
+                  className="h-10 w-10 rounded-full shrink-0 object-cover border-2 border-brand shadow-sm"
                 />
               ) : (
-                <div className="h-11 w-11 rounded-2xl bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-base">
+                <div className="h-10 w-10 rounded-full shrink-0 bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-sm">
                   {driverDisplayName.charAt(0)}
                 </div>
               )}
