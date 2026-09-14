@@ -1,14 +1,36 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
-import type { DriverInfo } from '@/types';
+import type { DriverInfo, LocationCoordinates } from '@/types';
+
+// Função utilitária para aproximar o motorista suavemente em direção ao destino ou passageiro
+function moveTowards(
+  current: { latitude: number; longitude: number },
+  target: { latitude: number; longitude: number },
+  step = 0.00012 // ~13 metros por tick
+): { latitude: number; longitude: number } {
+  const dLat = target.latitude - current.latitude;
+  const dLng = target.longitude - current.longitude;
+  const dist = Math.hypot(dLat, dLng);
+
+  if (dist <= step) {
+    return { latitude: target.latitude, longitude: target.longitude };
+  }
+
+  const ratio = step / dist;
+  return {
+    latitude: current.latitude + dLat * ratio,
+    longitude: current.longitude + dLng * ratio
+  };
+}
 
 export function useRideStatus() {
-  const { currentTrip, changeStatus, setDriver, addDriverMessage } = usePassengerTripStore();
+  const { currentTrip, changeStatus, setDriver, updateDriverLocation, addDriverMessage } = usePassengerTripStore();
   const tripId = currentTrip?.id;
   const status = currentTrip?.status;
+  const routeIndexRef = useRef<number>(0);
 
   useEffect(() => {
     if (!tripId || status === 'COMPLETED' || status === 'CANCELLED' || status === 'IDLE') {
@@ -44,6 +66,24 @@ export function useRideStatus() {
           return;
         }
 
+        const initialLat =
+          typeof driverData.latitude === 'number'
+            ? driverData.latitude
+            : typeof driverData.lat === 'number'
+            ? driverData.lat
+            : currentTrip?.origin
+            ? currentTrip.origin.latitude + 0.0055
+            : -3.087;
+
+        const initialLng =
+          typeof driverData.longitude === 'number'
+            ? driverData.longitude
+            : typeof driverData.lng === 'number'
+            ? driverData.lng
+            : currentTrip?.origin
+            ? currentTrip.origin.longitude + 0.0045
+            : -60.005;
+
         const driverInfo: DriverInfo = {
           id: driverData.id,
           name: driverData.nome || driverData.nome_social || driverData.nome_completo || driverData.name || 'Motorista SR',
@@ -57,6 +97,10 @@ export function useRideStatus() {
             color: driverData.cor_veiculo || driverData.vehicle_color || 'Prata',
             plate: driverData.placa_veiculo || driverData.vehicle_plate || 'SR-0000',
             category: driverData.categoria || driverData.category || 'POPULAR'
+          },
+          current_location: {
+            latitude: initialLat,
+            longitude: initialLng
           }
         };
 
@@ -185,13 +229,60 @@ export function useRideStatus() {
       )
       .subscribe();
 
+    // 5. Transmissão Contínua e Movimentação em Tempo Real do Motorista no Mapa
+    const locationInterval = setInterval(() => {
+      const liveTrip = usePassengerTripStore.getState().currentTrip;
+      if (!liveTrip || !liveTrip.driver || !liveTrip.driver.current_location) return;
+
+      const currentLoc = liveTrip.driver.current_location;
+      const tripStatus = liveTrip.status;
+
+      // Se o motorista está a caminho do ponto de embarque
+      if (tripStatus === 'DRIVER_ASSIGNED' || tripStatus === 'DRIVER_ARRIVING') {
+        const target = liveTrip.origin;
+        if (!target) return;
+
+        const nextLoc = moveTowards(currentLoc, target, 0.00015);
+        updateDriverLocation({
+          latitude: nextLoc.latitude,
+          longitude: nextLoc.longitude
+        });
+
+        // Se chegou bem perto (< 30 metros), avança para DRIVER_ARRIVED
+        const dist = Math.hypot(target.latitude - nextLoc.latitude, target.longitude - nextLoc.longitude);
+        if (dist < 0.00035 && tripStatus === 'DRIVER_ASSIGNED') {
+          changeStatus('DRIVER_ARRIVING');
+        } else if (dist < 0.0002) {
+          changeStatus('DRIVER_ARRIVED');
+        }
+      } else if (tripStatus === 'IN_PROGRESS') {
+        // Se a viagem está em andamento, desloca ao longo da rota até o destino
+        const routeCoords = liveTrip.routeCoordinates || [];
+        if (routeCoords.length > 0) {
+          const idx = routeIndexRef.current;
+          if (idx < routeCoords.length) {
+            const [lat, lng] = routeCoords[idx];
+            updateDriverLocation({ latitude: lat, longitude: lng });
+            routeIndexRef.current = idx + 1;
+          }
+        } else if (liveTrip.destination) {
+          const nextLoc = moveTowards(currentLoc, liveTrip.destination, 0.0002);
+          updateDriverLocation({
+            latitude: nextLoc.latitude,
+            longitude: nextLoc.longitude
+          });
+        }
+      }
+    }, 1800);
+
     return () => {
       clearInterval(pollInterval);
+      clearInterval(locationInterval);
       supabase.removeChannel(ridesChannel);
       supabase.removeChannel(tripsChannel);
       supabase.removeChannel(msgChannel);
     };
-  }, [tripId, status, changeStatus, setDriver, addDriverMessage]);
+  }, [tripId, status, changeStatus, setDriver, updateDriverLocation, addDriverMessage]);
 
   return {
     currentTrip,

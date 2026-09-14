@@ -45,6 +45,7 @@ interface PassengerTripStore {
   setCurrentTrip: (trip: PassengerTrip | null) => void;
   changeStatus: (nextStatus: PassengerTripStatus) => void;
   setDriver: (driver: DriverInfo) => void;
+  updateDriverLocation: (loc: LocationCoordinates) => void;
   sendChatMessage: (text: string) => Promise<void>;
   addDriverMessage: (text: string) => void;
   markChatAsRead: () => void;
@@ -222,6 +223,19 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     const updated = { ...currentTrip, driver, messages: updatedMessages };
     persistTrip(updated);
     set({ currentTrip: updated, chatMessages: updatedMessages, unreadChatCount: newUnread });
+  },
+
+  updateDriverLocation: (loc) => {
+    const { currentTrip } = get();
+    if (!currentTrip || !currentTrip.driver) return;
+
+    const updatedDriver: DriverInfo = {
+      ...currentTrip.driver,
+      current_location: loc
+    };
+    const updated = { ...currentTrip, driver: updatedDriver };
+    persistTrip(updated);
+    set({ currentTrip: updated });
   },
 
   sendChatMessage: async (text: string) => {
