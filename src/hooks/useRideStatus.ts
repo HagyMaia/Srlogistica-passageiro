@@ -18,36 +18,74 @@ export function useRideStatus() {
     // Função para carregar dados do motorista real quando associado à corrida
     const fetchRealDriver = async (driverId: string) => {
       try {
-        const { data: driverData, error } = await supabase
+        let driverData: any = null;
+
+        // Tenta buscar na tabela motoristas
+        const { data: mData } = await supabase
           .from('motoristas')
           .select('*')
           .eq('id', driverId)
           .maybeSingle();
 
-        if (error || !driverData) {
-          console.warn('Motorista não encontrado na tabela motoristas:', driverId);
+        if (mData) {
+          driverData = mData;
+        } else {
+          // Fallback para profiles ou drivers
+          const { data: pData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', driverId)
+            .maybeSingle();
+          if (pData) driverData = pData;
+        }
+
+        if (!driverData) {
+          console.warn('Motorista não encontrado:', driverId);
           return;
         }
 
         const driverInfo: DriverInfo = {
           id: driverData.id,
-          name: driverData.nome || driverData.nome_social || driverData.nome_completo || 'Motorista SR',
+          name: driverData.nome || driverData.nome_social || driverData.nome_completo || driverData.name || 'Motorista SR',
           phone: driverData.telefone || driverData.phone || '(92) 99123-4567',
           rating: typeof driverData.rating === 'number' ? driverData.rating : 4.95,
           total_rides: typeof driverData.total_rides === 'number' ? driverData.total_rides : 0,
           avatar_url: driverData.avatar_url || null,
           vehicle: {
-            brand: driverData.marca_veiculo || 'Veículo',
-            model: driverData.modelo_veiculo || 'Padrão',
-            color: driverData.cor_veiculo || 'Prata',
-            plate: driverData.placa_veiculo || 'SR-0000',
-            category: driverData.categoria || 'POPULAR'
+            brand: driverData.marca_veiculo || driverData.vehicle_brand || 'Veículo',
+            model: driverData.modelo_veiculo || driverData.vehicle_model || 'Padrão SR',
+            color: driverData.cor_veiculo || driverData.vehicle_color || 'Prata',
+            plate: driverData.placa_veiculo || driverData.vehicle_plate || 'SR-0000',
+            category: driverData.categoria || driverData.category || 'POPULAR'
           }
         };
 
         setDriver(driverInfo);
       } catch (err) {
         console.warn('Erro ao buscar dados do motorista real:', err);
+      }
+    };
+
+    // Função de verificação e atualização de status
+    const processStatusUpdate = async (newStatus: string, driverId?: string) => {
+      if (!newStatus) return;
+
+      if (driverId) {
+        await fetchRealDriver(driverId);
+      }
+
+      if (newStatus === 'ACCEPTED' || newStatus === 'DRIVER_ASSIGNED') {
+        changeStatus('DRIVER_ASSIGNED');
+      } else if (newStatus === 'ARRIVING' || newStatus === 'DRIVER_ARRIVING') {
+        changeStatus('DRIVER_ARRIVING');
+      } else if (newStatus === 'ARRIVED' || newStatus === 'DRIVER_ARRIVED') {
+        changeStatus('DRIVER_ARRIVED');
+      } else if (newStatus === 'IN_PROGRESS') {
+        changeStatus('IN_PROGRESS');
+      } else if (newStatus === 'COMPLETED' || newStatus === 'FINISHED') {
+        changeStatus('COMPLETED');
+      } else if (newStatus === 'CANCELLED') {
+        changeStatus('CANCELLED');
       }
     };
 
@@ -63,31 +101,12 @@ export function useRideStatus() {
           filter: `id=eq.${tripId}`
         },
         async (payload: any) => {
-          const newStatus = payload.new?.status;
-          const driverId = payload.new?.driver_id;
-
-          if (driverId && (!currentTrip?.driver || currentTrip.driver.id !== driverId)) {
-            await fetchRealDriver(driverId);
-          }
-
-          if (newStatus === 'ACCEPTED' || newStatus === 'DRIVER_ASSIGNED') {
-            changeStatus('DRIVER_ASSIGNED');
-          } else if (newStatus === 'ARRIVING' || newStatus === 'DRIVER_ARRIVING') {
-            changeStatus('DRIVER_ARRIVING');
-          } else if (newStatus === 'ARRIVED' || newStatus === 'DRIVER_ARRIVED') {
-            changeStatus('DRIVER_ARRIVED');
-          } else if (newStatus === 'IN_PROGRESS') {
-            changeStatus('IN_PROGRESS');
-          } else if (newStatus === 'COMPLETED' || newStatus === 'FINISHED') {
-            changeStatus('COMPLETED');
-          } else if (newStatus === 'CANCELLED') {
-            changeStatus('CANCELLED');
-          }
+          await processStatusUpdate(payload.new?.status, payload.new?.driver_id);
         }
       )
       .subscribe();
 
-    // 2. Escuta fallback na tabela 'trips' (caso o backend também envie para trips)
+    // 2. Escuta fallback na tabela 'trips'
     const tripsChannel = supabase
       .channel(`passenger-trip-${tripId}`)
       .on(
@@ -99,31 +118,27 @@ export function useRideStatus() {
           filter: `id=eq.${tripId}`
         },
         async (payload: any) => {
-          const newStatus = payload.new?.status;
-          const driverId = payload.new?.driver_id;
-
-          if (driverId && (!currentTrip?.driver || currentTrip.driver.id !== driverId)) {
-            await fetchRealDriver(driverId);
-          }
-
-          if (newStatus === 'ACCEPTED' || newStatus === 'DRIVER_ASSIGNED') {
-            changeStatus('DRIVER_ASSIGNED');
-          } else if (newStatus === 'DRIVER_ARRIVING' || newStatus === 'ARRIVING') {
-            changeStatus('DRIVER_ARRIVING');
-          } else if (newStatus === 'DRIVER_ARRIVED' || newStatus === 'ARRIVED') {
-            changeStatus('DRIVER_ARRIVED');
-          } else if (newStatus === 'IN_PROGRESS') {
-            changeStatus('IN_PROGRESS');
-          } else if (newStatus === 'COMPLETED' || newStatus === 'FINISHED') {
-            changeStatus('COMPLETED');
-          } else if (newStatus === 'CANCELLED') {
-            changeStatus('CANCELLED');
-          }
+          await processStatusUpdate(payload.new?.status, payload.new?.driver_id);
         }
       )
       .subscribe();
 
-    // 3. Escuta Mensagens em Tempo Real da Corrida
+    // 3. Polling de alta confiabilidade (a cada 2 segundos) para garantir sincronia imediata
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data: rideRow } = await supabase
+          .from('rides')
+          .select('id, status, driver_id')
+          .eq('id', tripId)
+          .maybeSingle();
+
+        if (rideRow) {
+          await processStatusUpdate(rideRow.status, rideRow.driver_id);
+        }
+      } catch (_) {}
+    }, 2000);
+
+    // 4. Escuta Mensagens em Tempo Real da Corrida
     const msgChannel = supabase
       .channel(`trip-messages-${tripId}`)
       .on(
@@ -144,11 +159,12 @@ export function useRideStatus() {
       .subscribe();
 
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(ridesChannel);
       supabase.removeChannel(tripsChannel);
       supabase.removeChannel(msgChannel);
     };
-  }, [tripId, status, changeStatus, setDriver, currentTrip, addDriverMessage]);
+  }, [tripId, status, changeStatus, setDriver, addDriverMessage]);
 
   return {
     currentTrip,
