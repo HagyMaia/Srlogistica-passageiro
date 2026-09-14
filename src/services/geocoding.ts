@@ -10,36 +10,42 @@ export interface PlaceSuggestion {
 const POPULAR_MANAUS_PLACES: PlaceSuggestion[] = [
   {
     id: 'p-1',
-    title: 'Manauara Shopping',
-    subtitle: 'Av. Mário Ypiranga, 1300 - Adrianópolis, Manaus - AM',
+    title: 'Manauara Shopping, Nº 1300',
+    subtitle: 'Av. Mário Ypiranga, Nº 1300 - Adrianópolis, Manaus - AM',
     coordinates: {
       latitude: -3.1037,
       longitude: -60.0125,
-      address: 'Av. Mário Ypiranga, 1300',
+      street: 'Av. Mário Ypiranga',
+      number: '1300',
+      address: 'Manauara Shopping (Av. Mário Ypiranga, Nº 1300)',
       neighborhood: 'Adrianópolis',
       city: 'Manaus'
     }
   },
   {
     id: 'p-2',
-    title: 'Amazonas Shopping',
-    subtitle: 'Av. Djalma Batista, 482 - Parque 10 de Novembro, Manaus - AM',
+    title: 'Amazonas Shopping, Nº 482',
+    subtitle: 'Av. Djalma Batista, Nº 482 - Parque 10 de Novembro, Manaus - AM',
     coordinates: {
       latitude: -3.0975,
       longitude: -60.0238,
-      address: 'Av. Djalma Batista, 482',
+      street: 'Av. Djalma Batista',
+      number: '482',
+      address: 'Amazonas Shopping (Av. Djalma Batista, Nº 482)',
       neighborhood: 'Parque 10 de Novembro',
       city: 'Manaus'
     }
   },
   {
     id: 'p-3',
-    title: 'Aeroporto Internacional Eduardo Gomes',
-    subtitle: 'Av. Santos Dumont, 1350 - Tarumã, Manaus - AM',
+    title: 'Aeroporto Internacional Eduardo Gomes, Nº 1350',
+    subtitle: 'Av. Santos Dumont, Nº 1350 - Tarumã, Manaus - AM',
     coordinates: {
       latitude: -3.0386,
       longitude: -60.0497,
-      address: 'Av. Santos Dumont, 1350',
+      street: 'Av. Santos Dumont',
+      number: '1350',
+      address: 'Aeroporto Internacional Eduardo Gomes (Av. Santos Dumont, Nº 1350)',
       neighborhood: 'Tarumã',
       city: 'Manaus'
     }
@@ -51,7 +57,9 @@ const POPULAR_MANAUS_PLACES: PlaceSuggestion[] = [
     coordinates: {
       latitude: -3.1302,
       longitude: -60.0234,
-      address: 'Praça São Sebastião, s/n',
+      street: 'Praça São Sebastião',
+      number: 's/n',
+      address: 'Teatro Amazonas (Praça São Sebastião, s/n)',
       neighborhood: 'Centro',
       city: 'Manaus'
     }
@@ -59,52 +67,101 @@ const POPULAR_MANAUS_PLACES: PlaceSuggestion[] = [
   {
     id: 'p-5',
     title: 'Praia da Ponta Negra',
-    subtitle: 'Av. Coronel Teixeira - Ponta Negra, Manaus - AM',
+    subtitle: 'Av. Coronel Teixeira, s/n - Ponta Negra, Manaus - AM',
     coordinates: {
       latitude: -3.0617,
       longitude: -60.1039,
-      address: 'Av. Coronel Teixeira',
+      street: 'Av. Coronel Teixeira',
+      number: 's/n',
+      address: 'Praia da Ponta Negra (Av. Coronel Teixeira, s/n)',
       neighborhood: 'Ponta Negra',
       city: 'Manaus'
     }
   },
   {
     id: 'p-6',
-    title: 'Shopping Ponta Negra',
-    subtitle: 'Av. Coronel Teixeira, 5705 - Ponta Negra, Manaus - AM',
+    title: 'Shopping Ponta Negra, Nº 5705',
+    subtitle: 'Av. Coronel Teixeira, Nº 5705 - Ponta Negra, Manaus - AM',
     coordinates: {
       latitude: -3.0768,
       longitude: -60.0817,
-      address: 'Av. Coronel Teixeira, 5705',
+      street: 'Av. Coronel Teixeira',
+      number: '5705',
+      address: 'Shopping Ponta Negra (Av. Coronel Teixeira, Nº 5705)',
       neighborhood: 'Ponta Negra',
       city: 'Manaus'
     }
   },
   {
     id: 'p-7',
-    title: 'Sumaúma Park Shopping',
-    subtitle: 'Av. Noel Nutels, 1762 - Cidade Nova, Manaus - AM',
+    title: 'Sumaúma Park Shopping, Nº 1762',
+    subtitle: 'Av. Noel Nutels, Nº 1762 - Cidade Nova, Manaus - AM',
     coordinates: {
       latitude: -3.0335,
       longitude: -59.9774,
-      address: 'Av. Noel Nutels, 1762',
+      street: 'Av. Noel Nutels',
+      number: '1762',
+      address: 'Sumaúma Park Shopping (Av. Noel Nutels, Nº 1762)',
       neighborhood: 'Cidade Nova',
       city: 'Manaus'
     }
   },
   {
     id: 'p-8',
-    title: 'Porto de Manaus / Roadway',
-    subtitle: 'Rua Taqueirinha, 25 - Centro, Manaus - AM',
+    title: 'Porto de Manaus / Roadway, Nº 25',
+    subtitle: 'Rua Taqueirinha, Nº 25 - Centro, Manaus - AM',
     coordinates: {
       latitude: -3.1389,
       longitude: -60.0272,
-      address: 'Rua Taqueirinha, 25',
+      street: 'Rua Taqueirinha',
+      number: '25',
+      address: 'Porto de Manaus (Rua Taqueirinha, Nº 25)',
       neighborhood: 'Centro',
       city: 'Manaus'
     }
   }
 ];
+
+// Formata número de casa brasileiro limpo, ignorando CEPs
+export function cleanHouseNumber(numStr?: string): string {
+  if (!numStr) return '';
+  const trimmed = numStr.trim();
+  // Se for CEP (ex: 69000-000 ou 69057002), não é número de casa
+  if (/^\d{5}-?\d{3}$/.test(trimmed)) return '';
+  // Se for numeração válida (ex: "123", "123-A", "45 B")
+  if (/^(\d{1,5}\s*[-/]?\s*[a-zA-Z0-9]?)$/.test(trimmed)) {
+    return trimmed;
+  }
+  return trimmed;
+}
+
+// Extrai número digitado pelo usuário na busca (ex: "Rua Pará 330" ou "Av Djalma, 1000")
+function extractNumberFromQuery(query: string): string | null {
+  const match = query.match(/(?:n[º°.]?\s*|,\s*|\s+)(\d{1,5}\s*[a-zA-Z]?)(?:\b|$)/i);
+  if (match && match[1]) {
+    const num = match[1].trim();
+    if (!/^\d{5}/.test(num)) {
+      return num;
+    }
+  }
+  return null;
+}
+
+// Constrói string padronizada com Rua e Número
+export function formatStreetAndNumber(
+  street: string,
+  number?: string,
+  venue?: string
+): string {
+  const cleanNum = cleanHouseNumber(number);
+  const numPart = cleanNum ? (cleanNum.toLowerCase().startsWith('nº') || cleanNum.toLowerCase() === 's/n' ? cleanNum : `Nº ${cleanNum}`) : '';
+
+  if (venue && venue !== street) {
+    return numPart ? `${venue} (${street}, ${numPart})` : `${venue} (${street})`;
+  }
+
+  return numPart ? `${street}, ${numPart}` : street;
+}
 
 export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
   if (!query || query.trim().length < 2) {
@@ -112,12 +169,14 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
   }
 
   const cleanQuery = query.toLowerCase().trim();
+  const queryNumber = extractNumberFromQuery(query);
 
-  // Filtragem local prioritária
+  // 1. Filtragem local prioritária
   const localMatches = POPULAR_MANAUS_PLACES.filter(
     (p) =>
       p.title.toLowerCase().includes(cleanQuery) ||
       p.subtitle.toLowerCase().includes(cleanQuery) ||
+      p.coordinates.street?.toLowerCase().includes(cleanQuery) ||
       p.coordinates.neighborhood?.toLowerCase().includes(cleanQuery)
   );
 
@@ -125,16 +184,16 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
     return localMatches;
   }
 
-  // Busca remota no OpenStreetMap Nominatim
+  // 2. Busca remota no OpenStreetMap Nominatim
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-      query + ', Manaus, Brasil'
-    )}&addressdetails=1&limit=5`;
+      query + ', Manaus, Amazonas, Brasil'
+    )}&addressdetails=1&limit=6`;
 
     const res = await fetch(url, {
       headers: {
         'Accept-Language': 'pt-BR,pt;q=0.9',
-        'User-Agent': 'SrLogisticaPassengerApp/1.0'
+        'User-Agent': 'SrLogisticaPassengerApp/1.0 (srlogistica21@gmail.com)'
       }
     });
 
@@ -142,20 +201,30 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
       const data = await res.json();
       const nominatimSuggestions: PlaceSuggestion[] = data.map((item: any) => {
         const addr = item.address || {};
-        const road = addr.road || addr.pedestrian || addr.suburb || item.display_name.split(',')[0];
-        const suburb = addr.suburb || addr.neighbourhood || addr.city_district || 'Manaus';
-        const houseNumber = addr.house_number ? `, ${addr.house_number}` : '';
+        const road = addr.road || addr.street || addr.pedestrian || addr.footway || addr.avenue || addr.residential || item.display_name.split(',')[0];
+        const rawNum = addr.house_number || queryNumber || '';
+        const houseNum = cleanHouseNumber(rawNum);
+        const venue = addr.shop || addr.amenity || addr.building || addr.office || addr.leisure || addr.tourism || '';
+        const suburb = addr.suburb || addr.neighbourhood || addr.city_district || addr.quarter || 'Manaus';
+        const city = addr.city || addr.town || 'Manaus';
+
+        const formattedAddress = formatStreetAndNumber(road, houseNum, venue);
+        const titleText = houseNum && !road.toLowerCase().includes('nº')
+          ? `${road}, Nº ${houseNum}`
+          : road;
 
         return {
           id: `nom-${item.place_id}`,
-          title: `${road}${houseNumber}`,
-          subtitle: item.display_name,
+          title: venue ? `${venue} (${titleText})` : titleText,
+          subtitle: `${suburb}, ${city} - AM`,
           coordinates: {
             latitude: parseFloat(item.lat),
             longitude: parseFloat(item.lon),
-            address: `${road}${houseNumber}`,
+            street: road,
+            number: houseNum || undefined,
+            address: formattedAddress,
             neighborhood: suburb,
-            city: addr.city || 'Manaus'
+            city: city
           }
         };
       });
@@ -169,15 +238,6 @@ export async function searchPlaces(query: string): Promise<PlaceSuggestion[]> {
   }
 
   return localMatches.length > 0 ? localMatches : POPULAR_MANAUS_PLACES.slice(0, 4);
-}
-
-// Formata endereço brasileiro limpo, filtrando CEP de números de casas
-function cleanHouseNumber(numStr?: string): string {
-  if (!numStr) return '';
-  const trimmed = numStr.trim();
-  // Se for CEP (ex: 69000-000 ou 69057002), não é número de casa
-  if (/^\d{5}-?\d{3}$/.test(trimmed)) return '';
-  return trimmed;
 }
 
 export async function reverseGeocode(lat: number, lng: number): Promise<LocationCoordinates> {
@@ -203,13 +263,13 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
       const city = addr.city || addr.town || addr.municipality || 'Manaus';
 
       if (road) {
-        const addressText = venue && venue !== road
-          ? `${venue} (${road}${houseNumber ? ', ' + houseNumber : ''})`
-          : `${road}${houseNumber ? ', ' + houseNumber : ''}`;
+        const addressText = formatStreetAndNumber(road, houseNumber, venue);
 
         return {
           latitude: lat,
           longitude: lng,
+          street: road,
+          number: houseNumber || undefined,
           address: addressText,
           neighborhood: suburb,
           city: city
@@ -220,7 +280,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
     console.warn('Nominatim reverse geocode indisponível, tentando Photon...', err);
   }
 
-  // 2. Provedor Secundário: Photon Geocoding API (Ultra-rápido)
+  // 2. Provedor Secundário: Photon Geocoding API (Komoot)
   try {
     const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
     const photonRes = await fetch(photonUrl);
@@ -236,13 +296,13 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
         const city = p.city || 'Manaus';
 
         if (road && !/^\d{5}-?\d{3}$/.test(road)) {
-          const addressText = venue
-            ? `${venue} (${road}${houseNumber ? ', ' + houseNumber : ''})`
-            : `${road}${houseNumber ? ', ' + houseNumber : ''}`;
+          const addressText = formatStreetAndNumber(road, houseNumber, venue);
 
           return {
             latitude: lat,
             longitude: lng,
+            street: road,
+            number: houseNumber || undefined,
             address: addressText,
             neighborhood: suburb,
             city: city
@@ -262,11 +322,14 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
       const bdcData = await bdcRes.json();
       const locality = bdcData.locality || bdcData.city || 'Manaus';
       const suburb = bdcData.localityInfo?.administrative?.find((a: any) => a.adminLevel >= 8)?.name || locality;
+      const streetName = bdcData.localityInfo?.administrative?.find((a: any) => a.adminLevel >= 9)?.name || '';
 
+      const mainStreet = streetName || `Ponto em ${suburb}`;
       return {
         latitude: lat,
         longitude: lng,
-        address: `Ponto em ${suburb}`,
+        street: mainStreet,
+        address: `${mainStreet}`,
         neighborhood: suburb,
         city: bdcData.city || 'Manaus'
       };
@@ -275,10 +338,11 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Location
     console.warn('BigDataCloud indisponível...', err);
   }
 
-  // Fallback real baseado exclusivamente nas coordenadas físicas
+  // Fallback real baseado nas coordenadas físicas
   return {
     latitude: lat,
     longitude: lng,
+    street: `Local Marcado (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
     address: `Local Marcado (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
     neighborhood: 'Ponto no Mapa',
     city: 'Manaus'

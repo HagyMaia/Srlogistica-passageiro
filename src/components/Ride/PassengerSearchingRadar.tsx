@@ -43,15 +43,30 @@ export function PassengerSearchingRadar({ trip, onCancel }: PassengerSearchingRa
         </div>
       </div>
 
-      {/* Detalhes da Rota em Espera */}
-      <div className="space-y-2 rounded-2xl bg-slate-50 dark:bg-dark-950/40 p-3 text-xs border border-slate-100 dark:border-dark-800">
-        <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-          <span className="font-medium text-slate-400">Embarque:</span>
-          <span className="font-bold truncate max-w-[200px]">{trip.origin.address}</span>
+      {/* Detalhes da Rota em Espera com Rua e Número */}
+      <div className="space-y-2 rounded-2xl bg-slate-50 dark:bg-dark-950/50 p-3 text-xs border border-slate-100 dark:border-dark-800">
+        <div className="flex items-start gap-2 text-slate-700 dark:text-slate-200">
+          <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 mt-1 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400 block">
+              Embarque (GPS)
+            </span>
+            <p className="font-black text-slate-900 dark:text-white truncate">
+              {trip.origin.address || 'Ponto de Partida'}
+            </p>
+          </div>
         </div>
-        <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
-          <span className="font-medium text-slate-400">Destino:</span>
-          <span className="font-bold truncate max-w-[200px]">{trip.destination.address}</span>
+
+        <div className="flex items-start gap-2 pt-1 border-t border-slate-200/60 dark:border-dark-800 text-slate-700 dark:text-slate-200">
+          <div className="h-2.5 w-2.5 rounded-full bg-amber-500 mt-1 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold uppercase text-brand-700 dark:text-brand block">
+              Destino
+            </span>
+            <p className="font-black text-slate-900 dark:text-white truncate">
+              {trip.destination.address || 'Ponto de Destino'}
+            </p>
+          </div>
         </div>
       </div>
 

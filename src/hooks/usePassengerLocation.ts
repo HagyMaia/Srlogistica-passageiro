@@ -8,7 +8,9 @@ import { reverseGeocode } from '@/services/geocoding';
 const DEFAULT_MANAUS_LOCATION: LocationCoordinates = {
   latitude: -3.1037,
   longitude: -60.0125,
-  address: 'Av. Mário Ypiranga, 1300',
+  street: 'Av. Mário Ypiranga',
+  number: '1300',
+  address: 'Av. Mário Ypiranga, Nº 1300',
   neighborhood: 'Adrianópolis',
   city: 'Manaus'
 };
@@ -65,6 +67,8 @@ export function usePassengerLocation() {
       setLocation((prev) => ({
         latitude: lat,
         longitude: lng,
+        street: geoData.street || prev?.street,
+        number: geoData.number || prev?.number,
         address: geoData.address,
         neighborhood: geoData.neighborhood,
         city: geoData.city
@@ -93,9 +97,11 @@ export function usePassengerLocation() {
       setLocation((prev) => ({
         latitude,
         longitude,
+        street: prev?.street,
+        number: prev?.number,
         address: prev?.address && prev.latitude === latitude && prev.longitude === longitude
           ? prev.address
-          : 'Identificando endereço da sua localização...',
+          : (prev?.address || 'Identificando endereço da sua localização...'),
         neighborhood: prev?.neighborhood || '',
         city: prev?.city || 'Manaus'
       }));

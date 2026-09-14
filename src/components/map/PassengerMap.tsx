@@ -6,15 +6,15 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LocationCoordinates, DriverInfo } from '@/types';
 
-// Alfinete Executivo de Embarque (Pickup Pin) com agulha de precisão e balão de endereço
+// Alfinete Executivo de Embarque (Pickup Pin) com agulha de precisão e balão de endereço com número
 const createPickupAlfineteIcon = (label?: string) =>
   L.divIcon({
     className: 'custom-pickup-alfinete',
     html: `
-      <div style="position: relative; width: 140px; height: 90px; margin-left: -70px; margin-top: -90px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none; user-select: none;">
-        <!-- Balão com Nome do Local ou Dica de Arraste -->
-        <div style="background: rgba(11, 18, 36, 0.96); color: #ffffff; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1.5px solid #10b981; margin-bottom: 6px; white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; pointer-events: auto;">
-          <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; animation: pulse 1.5s infinite;"></span>
+      <div style="position: relative; width: 180px; height: 90px; margin-left: -90px; margin-top: -90px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none; user-select: none;">
+        <!-- Balão com Nome da Rua e Número de Embarque -->
+        <div style="background: rgba(11, 18, 36, 0.96); color: #ffffff; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1.5px solid #10b981; margin-bottom: 6px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; pointer-events: auto;">
+          <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; animation: pulse 1.5s infinite; shrink-0;"></span>
           <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${label || 'Ponto de Embarque'}</span>
         </div>
 
@@ -37,14 +37,14 @@ const createPickupAlfineteIcon = (label?: string) =>
     iconAnchor: [0, 0]
   });
 
-// Alfinete de Destino (Flag)
-const createDestinationIcon = () =>
+// Alfinete de Destino (Flag) com balão de endereço com número
+const createDestinationIcon = (label?: string) =>
   L.divIcon({
     className: 'custom-destination-pin',
     html: `
-      <div style="position: relative; width: 120px; height: 80px; margin-left: -60px; margin-top: -80px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none;">
-        <div style="background: rgba(11, 18, 36, 0.95); color: #FFC800; padding: 3px 8px; border-radius: 9999px; font-size: 10px; font-weight: 800; border: 1.5px solid #FFC800; margin-bottom: 4px; box-shadow: 0 8px 20px rgba(0,0,0,0.4);">
-          🏁 Destino
+      <div style="position: relative; width: 180px; height: 85px; margin-left: -90px; margin-top: -85px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none;">
+        <div style="background: rgba(11, 18, 36, 0.95); color: #FFC800; padding: 4px 10px; border-radius: 9999px; font-size: 10.5px; font-weight: 800; border: 1.5px solid #FFC800; margin-bottom: 5px; box-shadow: 0 8px 20px rgba(0,0,0,0.4); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
+          🏁 ${label || 'Destino'}
         </div>
         <div style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #FFC800 0%, #F59E0B 100%); border: 2.5px solid #0B1224; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #0B1224; box-shadow: 0 6px 16px rgba(0,0,0,0.35);">
           🏁
@@ -149,10 +149,13 @@ export default function PassengerMap({
     : defaultCenter;
 
   const alfineteIcon = useMemo(
-    () => createPickupAlfineteIcon(pinLabel || (origin?.address ? origin.address.split(',')[0] : 'Embarque Aqui')),
+    () => createPickupAlfineteIcon(pinLabel || origin?.address || 'Ponto de Embarque'),
     [pinLabel, origin?.address]
   );
-  const destinationIcon = useMemo(() => createDestinationIcon(), []);
+  const destinationIcon = useMemo(
+    () => createDestinationIcon(destination?.address || 'Destino'),
+    [destination?.address]
+  );
   const assignedCarIcon = useMemo(() => createCarIcon(true), []);
   const roamingCarIcon = useMemo(() => createCarIcon(false), []);
 

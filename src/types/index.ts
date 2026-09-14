@@ -2,6 +2,8 @@ export interface LocationCoordinates {
   latitude: number;
   longitude: number;
   address?: string;
+  street?: string;
+  number?: string;
   neighborhood?: string;
   city?: string;
 }
