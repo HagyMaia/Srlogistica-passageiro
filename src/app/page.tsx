@@ -30,7 +30,9 @@ import {
   Phone,
   CheckCircle2,
   Award,
-  Wallet
+  Wallet,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { Button, Card, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -197,6 +199,7 @@ export default function HomePage() {
   const [suggestions, setSuggestions] = useState<PlaceSuggestion[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [activeStep, setActiveStep] = useState<'MAP' | 'SELECT_DESTINATION' | 'SELECT_CATEGORY'>('MAP');
+  const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
 
   // Modo de Solicitação: Imediato ('NOW') ou Agendado ('SCHEDULE')
   const [rideMode, setRideMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
@@ -456,6 +459,26 @@ export default function HomePage() {
       await updateRouteCalculation(destination, origin);
     }
   };
+
+  // Cancela a corrida e limpa o trajeto do mapa
+  const handleCancelAndReset = useCallback(async () => {
+    await cancelRide();
+    setDestination(null);
+    setRouteInfo({ coordinates: [], distanceMeters: 0, durationSeconds: 0, estimatedFare: 0 });
+    setActiveStep('MAP');
+    setIsPanelCollapsed(false);
+    setGpsToastMsg('❌ Pedido cancelado. Mapa e rota redefinidos.');
+    setTimeout(() => setGpsToastMsg(null), 3000);
+  }, [cancelRide, setDestination, setRouteInfo]);
+
+  // Limpa o trajeto / destino para visualizar o mapa limpo
+  const handleClearRoute = useCallback(() => {
+    setDestination(null);
+    setRouteInfo({ coordinates: [], distanceMeters: 0, durationSeconds: 0, estimatedFare: 0 });
+    setActiveStep('MAP');
+    setGpsToastMsg('📍 Trajeto removido. Mapa pronto para nova busca.');
+    setTimeout(() => setGpsToastMsg(null), 2500);
+  }, [setDestination, setRouteInfo]);
 
   // Quando o usuário arrasta o alfinete de embarque ou clica no mapa para marcar o local exato
   const handleOriginPinMoved = useCallback(
@@ -759,11 +782,43 @@ export default function HomePage() {
         )}
       </div>
 
-      {/* BOTÃO FLUTUANTE RECENTRALIZAR GPS AO VIVO */}
-      <div className="absolute right-3.5 bottom-[350px] z-10 flex flex-col gap-2">
+      {/* BOTÕES FLUTUANTES NO MAPA: RECENTRALIZAR GPS, EXIBIR/OCULTAR & LIMPAR ROTA */}
+      <div className="absolute right-3.5 bottom-[350px] z-10 flex flex-col gap-2.5 items-end pointer-events-none">
+        {/* Botão de Exibir/Ocultar Painel para visualização ampla do mapa */}
+        <button
+          onClick={() => setIsPanelCollapsed((prev) => !prev)}
+          className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/95 dark:bg-dark-900/95 text-slate-800 dark:text-slate-100 shadow-2xl border border-slate-200/80 dark:border-dark-700/80 hover:scale-105 active:scale-95 transition backdrop-blur-xl text-xs font-black"
+          title={isPanelCollapsed ? "Exibir painel de solicitação" : "Ocultar painel para ver o mapa completo"}
+        >
+          {isPanelCollapsed ? (
+            <>
+              <Eye size={17} className="text-brand-600 dark:text-brand" />
+              <span>Exibir Painel</span>
+            </>
+          ) : (
+            <>
+              <EyeOff size={17} className="text-slate-500" />
+              <span>Ocultar Painel</span>
+            </>
+          )}
+        </button>
+
+        {/* Botão Limpar Trajeto (se houver destino/rota e não tiver corrida ativa) */}
+        {destination && (!currentTrip || currentTrip.status === 'IDLE') && (
+          <button
+            onClick={handleClearRoute}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white/95 dark:bg-dark-900/95 text-red-600 dark:text-red-400 shadow-2xl border border-red-200 dark:border-red-900/40 hover:scale-105 active:scale-95 transition backdrop-blur-xl text-xs font-black"
+            title="Limpar rota e destino do mapa"
+          >
+            <X size={16} />
+            <span>Limpar Rota</span>
+          </button>
+        )}
+
+        {/* Botão Recentralizar GPS */}
         <button
           onClick={handleRecenterGPS}
-          className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-dark-900 text-emerald-600 dark:text-emerald-400 shadow-2xl border border-slate-200 dark:border-dark-700 hover:scale-105 active:scale-95 transition"
+          className="pointer-events-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-white dark:bg-dark-900 text-emerald-600 dark:text-emerald-400 shadow-2xl border border-slate-200 dark:border-dark-700 hover:scale-105 active:scale-95 transition"
           title="Recentralizar no meu GPS em tempo real"
         >
           <Crosshair size={22} className={gpsLoading ? 'animate-spin' : ''} />
@@ -772,19 +827,43 @@ export default function HomePage() {
 
       {/* ÁREA INFERIOR: PAINEL DE SOLICITAÇÃO (BOTTOM SHEET INTERATIVO) */}
       <div className="mt-auto z-20 w-full max-w-lg mx-auto p-3">
-        {/* FLUXO 1: EM BUSCA DE MOTORISTA (RADAR) */}
-        {currentTrip && currentTrip.status === 'SEARCHING_DRIVER' && (
-          <PassengerSearchingRadar trip={currentTrip} onCancel={cancelRide} />
-        )}
+        {isPanelCollapsed ? (
+          <div className="w-full pb-2 animate-in fade-in slide-in-from-bottom-2">
+            <button
+              onClick={() => setIsPanelCollapsed(false)}
+              className="w-full flex items-center justify-between rounded-2xl bg-white/95 dark:bg-dark-900/95 p-3.5 shadow-2xl border border-brand/50 backdrop-blur-xl transition hover:scale-[1.01] active:scale-95"
+            >
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex h-3 w-3 rounded-full bg-brand animate-ping shrink-0" />
+                <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                  {currentTrip && currentTrip.status === 'SEARCHING_DRIVER'
+                    ? 'Procurando motorista... (Toque para abrir)'
+                    : destination
+                    ? 'Corrida configurada (Toque para abrir painel)'
+                    : '📍 Para onde vamos? (Toque para abrir painel)'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-black text-brand-700 dark:text-brand shrink-0 ml-2">
+                <Eye size={16} />
+                <span>Exibir Painel</span>
+              </div>
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* FLUXO 1: EM BUSCA DE MOTORISTA (RADAR) */}
+            {currentTrip && currentTrip.status === 'SEARCHING_DRIVER' && (
+              <PassengerSearchingRadar trip={currentTrip} onCancel={handleCancelAndReset} />
+            )}
 
-        {/* FLUXO 2: CORRIDA ACEITA OU EM ANDAMENTO */}
-        {currentTrip &&
-          (currentTrip.status === 'DRIVER_ASSIGNED' ||
-            currentTrip.status === 'DRIVER_ARRIVING' ||
-            currentTrip.status === 'DRIVER_ARRIVED' ||
-            currentTrip.status === 'IN_PROGRESS') && (
-            <PassengerActiveRideSheet trip={currentTrip} onCancel={cancelRide} />
-          )}
+            {/* FLUXO 2: CORRIDA ACEITA OU EM ANDAMENTO */}
+            {currentTrip &&
+              (currentTrip.status === 'DRIVER_ASSIGNED' ||
+                currentTrip.status === 'DRIVER_ARRIVING' ||
+                currentTrip.status === 'DRIVER_ARRIVED' ||
+                currentTrip.status === 'IN_PROGRESS') && (
+                <PassengerActiveRideSheet trip={currentTrip} onCancel={handleCancelAndReset} />
+              )}
 
         {/* FLUXO 3: DASHBOARD DE SOLICITAÇÃO / ESCOLHA DE DESTINO */}
         {(!currentTrip || currentTrip.status === 'IDLE') && (
@@ -792,6 +871,21 @@ export default function HomePage() {
             {/* ETAPA A: DASHBOARD INICIAL DO MAPA */}
             {activeStep === 'MAP' && (
               <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white/95 dark:bg-dark-900/95 backdrop-blur-xl p-4 shadow-2xl space-y-3">
+                {/* Cabeçalho do Painel com Botão Ver Mapa */}
+                <div className="flex items-center justify-between pb-0.5">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Solicitar Transporte SR
+                  </span>
+                  <button
+                    onClick={() => setIsPanelCollapsed(true)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-dark-800 transition"
+                    title="Ocultar painel para ver mapa em tela cheia"
+                  >
+                    <EyeOff size={13} />
+                    <span>Ver Mapa</span>
+                  </button>
+                </div>
+
                 {/* Banner de Aprovação Pendente (se aplicável) */}
                 {!isApproved && (
                   <button
@@ -1172,6 +1266,31 @@ export default function HomePage() {
             {/* ETAPA C: TELA DE SOLICITAÇÃO (CONFIRMAÇÃO DE ROTA, CATEGORIAS, ENDEREÇOS COM NÚMERO E ENVIO) */}
             {activeStep === 'SELECT_CATEGORY' && (
               <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-900 p-4 shadow-2xl space-y-3.5 max-h-[82vh] overflow-y-auto">
+                {/* Barra de Ações Superior do Painel: Minimizar e Limpar Rota */}
+                <div className="flex items-center justify-between pb-0.5">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-100">
+                    Confirmar Viagem
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => setIsPanelCollapsed(true)}
+                      className="flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-dark-800 transition"
+                      title="Ocultar painel para ver o mapa"
+                    >
+                      <EyeOff size={13} />
+                      <span>Ver Mapa</span>
+                    </button>
+                    <button
+                      onClick={handleClearRoute}
+                      className="flex items-center gap-1 text-[11px] font-bold text-red-600 dark:text-red-400 hover:bg-red-500/10 px-2.5 py-1 rounded-xl border border-red-200 dark:border-red-900/40 transition"
+                      title="Cancelar e limpar rota do mapa"
+                    >
+                      <X size={13} />
+                      <span>Limpar Rota</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Resumo da Rota Editável com Rua e Número Claros de acordo com o GPS */}
                 <div className="rounded-2xl bg-slate-50 dark:bg-dark-950/80 p-3.5 border border-slate-200/80 dark:border-dark-800 space-y-3">
                   {/* Ponto de Embarque com Rua e Número */}
@@ -1529,6 +1648,8 @@ export default function HomePage() {
                 </div>
               </div>
             )}
+          </>
+        )}
           </>
         )}
       </div>

@@ -427,7 +427,18 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     } catch (_) {}
 
     persistTrip(null);
-    set({ currentTrip: null, error: null });
+    set({
+      currentTrip: null,
+      destination: null,
+      routeCoordinates: [],
+      estimatedDistanceMeters: 0,
+      estimatedDurationSeconds: 0,
+      estimatedFare: 0,
+      chatMessages: [],
+      unreadChatCount: 0,
+      isDriverTyping: false,
+      error: null
+    });
   },
 
   scheduleRide: async (passenger, scheduledFor, notes) => {
