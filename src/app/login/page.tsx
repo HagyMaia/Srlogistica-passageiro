@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -12,12 +12,23 @@ import {
   MessageSquare,
   Clock,
   ExternalLink,
-  Zap
+  Zap,
+  Fingerprint,
+  ShieldCheck,
+  Smartphone
 } from 'lucide-react';
 import { Button, Input, Field } from '@/components/ui';
 import { supabase } from '@/lib/supabase';
 import { SR_SUPPORT_CONFIG } from '@/types';
 import { useAuth } from '@/lib/auth';
+import {
+  isBiometricsSupported,
+  isBiometricsEnrolled,
+  getBiometricUser,
+  authenticateWithBiometrics,
+  enrollBiometrics,
+  BiometricUserInfo
+} from '@/lib/biometrics';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,8 +36,62 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [biometricLoading, setBiometricLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pendingApprovalUser, setPendingApprovalUser] = useState<{ email: string; name: string } | null>(null);
+
+  const [hasBiometricsSupport, setHasBiometricsSupport] = useState(false);
+  const [isEnrolled, setIsEnrolled] = useState(false);
+  const [biometricUser, setBiometricUser] = useState<BiometricUserInfo | null>(null);
+
+  useEffect(() => {
+    async function checkBio() {
+      const supported = await isBiometricsSupported();
+      const enrolled = isBiometricsEnrolled();
+      const bioUser = getBiometricUser();
+
+      setHasBiometricsSupport(supported);
+      setIsEnrolled(enrolled);
+      setBiometricUser(bioUser);
+
+      if (bioUser?.email) {
+        setEmail(bioUser.email);
+      }
+    }
+    checkBio();
+  }, []);
+
+  const handleBiometricLogin = async () => {
+    setBiometricLoading(true);
+    setErrorMsg(null);
+
+    try {
+      if (isEnrolled && biometricUser) {
+        // Usuário já cadastrado no aparelho: valida a biometria nativa
+        const authenticatedUser = await authenticateWithBiometrics();
+        await loginAsGuest({
+          id: authenticatedUser.id,
+          email: authenticatedUser.email,
+          name: authenticatedUser.name || 'Passageiro SR'
+        });
+        window.location.href = '/';
+      } else {
+        // Primeira vez com biometria: se já tiver e-mail preenchido, cadastra no aparelho
+        const targetEmail = email || 'passageiro@srlogistica.com.br';
+        await enrollBiometrics({
+          id: `passenger-${Date.now()}`,
+          email: targetEmail,
+          name: targetEmail.split('@')[0]
+        });
+        await loginAsGuest({ email: targetEmail });
+        window.location.href = '/';
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Não foi possível validar a biometria.');
+    } finally {
+      setBiometricLoading(false);
+    }
+  };
 
   const handleQuickLogin = async () => {
     setLoading(true);
@@ -53,7 +118,18 @@ export default function LoginPage() {
       }
 
       if (data?.user) {
-        // Verifica se o cadastro está com aprovação pendente no banco (tabelas profiles e passageiros)
+        // Se o aparelho suportar biometria e ainda não estiver cadastrado, cadastra em segundo plano
+        if (hasBiometricsSupport && !isEnrolled) {
+          try {
+            await enrollBiometrics({
+              id: data.user.id,
+              email: data.user.email || email,
+              name: data.user.user_metadata?.name || email.split('@')[0]
+            });
+          } catch (_) {}
+        }
+
+        // Verifica se o cadastro está com aprovação pendente no banco
         try {
           const { data: profData } = await supabase
             .from('profiles')
@@ -155,6 +231,38 @@ export default function LoginPage() {
           </div>
         )}
 
+        {/* Card de Entrada por Digital / Biometria (Destaque Principal) */}
+        {(isEnrolled || hasBiometricsSupport) && (
+          <div className="mb-5 rounded-3xl border border-brand/40 bg-gradient-to-b from-brand/10 to-transparent p-4 text-center shadow-lg shadow-brand/5 space-y-3">
+            <div className="flex flex-col items-center gap-1.5">
+              <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-brand text-dark-950 shadow-md shadow-brand/30">
+                <Fingerprint size={32} className="stroke-[2.2]" />
+                <span className="absolute inset-0 rounded-2xl border-2 border-brand animate-ping opacity-25" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                  {isEnrolled ? `Olá, ${biometricUser?.name || biometricUser?.email?.split('@')[0] || 'Passageiro'}` : 'Entrada por Biometria'}
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {isEnrolled
+                    ? 'Acesse o app com sua impressão digital ou Face ID'
+                    : 'Toque para ativar o acesso rápido por digital neste aparelho'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBiometricLogin}
+              disabled={biometricLoading || loading}
+              className="flex w-full items-center justify-center gap-2.5 h-12 px-4 rounded-2xl bg-brand hover:bg-brand-400 text-dark-950 font-black text-sm shadow-md transition active:scale-[0.98] disabled:opacity-50"
+            >
+              <Fingerprint size={20} className="stroke-[2.5]" />
+              <span>{biometricLoading ? 'Lendo Biometria...' : isEnrolled ? 'Entrar com Digital / Face ID' : 'Ativar e Entrar com Digital'}</span>
+            </button>
+          </div>
+        )}
+
         <form onSubmit={handleLogin} className="space-y-3.5">
           {errorMsg && (
             <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs font-medium text-red-600 dark:text-red-400">
@@ -190,19 +298,19 @@ export default function LoginPage() {
             </div>
           </Field>
 
-          <Button type="submit" size="xl" full disabled={loading} className="mt-2">
-            {loading ? 'Entrando...' : 'Entrar no App'} <ArrowRight size={18} />
+          <Button type="submit" size="xl" full disabled={loading || biometricLoading} className="mt-2">
+            {loading ? 'Entrando...' : 'Entrar com Senha'} <ArrowRight size={18} />
           </Button>
 
           {/* Botão de Acesso Rápido Direto */}
           <button
             type="button"
             onClick={handleQuickLogin}
-            disabled={loading}
+            disabled={loading || biometricLoading}
             className="flex w-full items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-900 dark:text-amber-300 font-black text-xs shadow-sm transition active:scale-[0.98]"
           >
             <Zap size={14} className="text-amber-500 fill-amber-500" />
-            <span>⚡ Entrar Direto (Acesso Rápido / Demonstração)</span>
+            <span>⚡ Acesso Rápido Executivo</span>
           </button>
         </form>
       </div>

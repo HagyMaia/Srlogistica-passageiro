@@ -23,13 +23,21 @@ import {
   Upload,
   Check,
   Smartphone,
-  Download
+  Download,
+  Fingerprint
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { SupportModal } from '@/components/SupportModal';
 import { PendingApprovalModal } from '@/components/PendingApprovalModal';
 import { SR_SUPPORT_CONFIG } from '@/types';
+import {
+  isBiometricsSupported,
+  isBiometricsEnrolled,
+  enrollBiometrics,
+  removeBiometrics,
+  getBiometricUser
+} from '@/lib/biometrics';
 
 // Avatares Executivos Pré-definidos em Alta Definição
 const EXECUTIVE_AVATARS = [
@@ -87,6 +95,46 @@ export default function PerfilPage() {
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
+
+  const [bioSupported, setBioSupported] = useState(false);
+  const [bioEnrolled, setBioEnrolled] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
+  const [bioMsg, setBioMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkBio() {
+      const sup = await isBiometricsSupported();
+      const enr = isBiometricsEnrolled();
+      setBioSupported(sup);
+      setBioEnrolled(enr);
+    }
+    checkBio();
+  }, []);
+
+  const handleEnableBiometrics = async () => {
+    setBioLoading(true);
+    setBioMsg(null);
+    try {
+      const userObj = {
+        id: profile?.id || 'passenger-user',
+        email: profile?.email || 'passageiro@srlogistica.com.br',
+        name: name || profile?.name || 'Passageiro SR'
+      };
+      await enrollBiometrics(userObj);
+      setBioEnrolled(true);
+      setBioMsg('Biometria cadastrada com sucesso neste aparelho!');
+    } catch (err: any) {
+      setBioMsg(err.message || 'Falha ao cadastrar biometria.');
+    } finally {
+      setBioLoading(false);
+    }
+  };
+
+  const handleDisableBiometrics = () => {
+    removeBiometrics();
+    setBioEnrolled(false);
+    setBioMsg('Biometria desativada deste dispositivo.');
+  };
 
   // Sincroniza os estados com os dados reais do perfil quando carregados
   useEffect(() => {
@@ -475,6 +523,72 @@ export default function PerfilPage() {
           <Save size={16} /> {isSaving ? 'Salvando...' : 'Salvar Alterações'}
         </Button>
       </form>
+
+      {/* Segurança & Entrada por Digital / Biometria */}
+      <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 space-y-3 shadow-sm text-xs">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-brand/15 text-brand-600 dark:text-brand font-bold shadow-sm">
+              <Fingerprint size={22} className="stroke-[2.3]" />
+            </div>
+            <div>
+              <span className="text-sm font-black text-slate-900 dark:text-white block">
+                Entrada por Digital / Biometria
+              </span>
+              <span className="text-[10px] text-slate-400">
+                {bioEnrolled ? 'Ativada para este aparelho' : 'Desativada'}
+              </span>
+            </div>
+          </div>
+
+          <Badge className={bioEnrolled ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' : 'bg-slate-100 text-slate-500'}>
+            {bioEnrolled ? 'Ativa' : 'Disponível'}
+          </Badge>
+        </div>
+
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+          Permite entrar no aplicativo instantaneamente usando seu leitor de impressão digital, Face ID ou biometria nativa do aparelho.
+        </p>
+
+        {bioMsg && (
+          <div
+            className={`p-2.5 rounded-xl text-xs font-bold ${
+              bioMsg.includes('sucesso')
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+            }`}
+          >
+            {bioMsg}
+          </div>
+        )}
+
+        <div className="pt-1 flex gap-2">
+          {!bioEnrolled ? (
+            <Button
+              type="button"
+              size="md"
+              full
+              disabled={bioLoading}
+              onClick={handleEnableBiometrics}
+              className="font-bold flex items-center justify-center gap-2"
+            >
+              <Fingerprint size={16} />
+              {bioLoading ? 'Registrando...' : 'Cadastrar Digital Neste Aparelho'}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              size="md"
+              full
+              onClick={handleDisableBiometrics}
+              className="text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/10 font-bold"
+            >
+              Desativar Biometria
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* Central de Ajuda & Links Oficiais */}
       <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-2 space-y-1 shadow-sm text-xs">
