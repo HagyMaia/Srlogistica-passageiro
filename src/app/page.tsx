@@ -501,13 +501,53 @@ export default function HomePage() {
         if (destination) {
           await updateRouteCalculation(resolvedOrigin, destination);
         }
-        setGpsToastMsg(`📍 Embarque: ${geo.address}`);
+        setGpsToastMsg(`📍 Embarque ajustado: ${geo.address}`);
         setTimeout(() => setGpsToastMsg(null), 3500);
       } catch (e) {
         // mantém coordenadas
       }
     },
     [currentTrip, activeStep, searchTarget, destination, setOrigin, updateRouteCalculation, handleSelectPlace]
+  );
+
+  // Quando o usuário arrasta o alfinete de destino para marcar a entrada ou portão exato
+  const handleDestinationPinMoved = useCallback(
+    async ([lat, lng]: [number, number]) => {
+      if (currentTrip && currentTrip.status !== 'IDLE') return;
+
+      const tempDest: LocationCoordinates = {
+        latitude: lat,
+        longitude: lng,
+        address: 'Identificando endereço do destino no mapa...',
+        neighborhood: 'Destino no Mapa',
+        city: 'Manaus'
+      };
+      setDestination(tempDest);
+      setGpsToastMsg('🏁 Alfinete de destino posicionado! Identificando rua e número...');
+
+      try {
+        const geo = await reverseGeocode(lat, lng);
+        const resolvedDest: LocationCoordinates = {
+          latitude: lat,
+          longitude: lng,
+          street: geo.street,
+          number: geo.number,
+          address: geo.address,
+          neighborhood: geo.neighborhood,
+          city: geo.city
+        };
+        setDestination(resolvedDest);
+        const currentOrigin = origin || location;
+        if (currentOrigin) {
+          await updateRouteCalculation(currentOrigin, resolvedDest);
+        }
+        setGpsToastMsg(`🏁 Destino ajustado: ${geo.address}`);
+        setTimeout(() => setGpsToastMsg(null), 3500);
+      } catch (e) {
+        // mantém coordenadas
+      }
+    },
+    [currentTrip, origin, location, setDestination, updateRouteCalculation]
   );
 
   // Categorias disponíveis com tarifas calculadas
@@ -655,7 +695,9 @@ export default function HomePage() {
           accuracy={accuracy}
           onMapClick={handleOriginPinMoved}
           onOriginDragEnd={handleOriginPinMoved}
+          onDestinationDragEnd={handleDestinationPinMoved}
           isPinDraggable={true}
+          isDestinationDraggable={true}
           pinLabel={origin?.address || location?.address || 'Alfinete de Embarque'}
           className="w-full h-full"
         />

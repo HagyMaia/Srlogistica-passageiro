@@ -1,60 +1,162 @@
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { LocationCoordinates, DriverInfo } from '@/types';
 
-// Alfinete Executivo de Embarque (Pickup Pin) com agulha de precisão e balão de endereço com número
-const createPickupAlfineteIcon = (label?: string) =>
+// Alfinete Executivo de Embarque (Pickup Pin) com agulha de precisão, balão e suporte a arrasto
+const createPickupAlfineteIcon = (label?: string, isDragging = false) =>
   L.divIcon({
-    className: 'custom-pickup-alfinete',
+    className: 'custom-pickup-alfinete-container',
     html: `
-      <div style="position: relative; width: 180px; height: 90px; margin-left: -90px; margin-top: -90px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none; user-select: none;">
-        <!-- Balão com Nome da Rua e Número de Embarque -->
-        <div style="background: rgba(11, 18, 36, 0.96); color: #ffffff; padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); border: 1.5px solid #10b981; margin-bottom: 6px; white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis; pointer-events: auto;">
-          <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; display: inline-block; animation: pulse 1.5s infinite; shrink-0;"></span>
-          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${label || 'Ponto de Embarque'}</span>
+      <div style="
+        position: relative;
+        width: 220px;
+        height: 110px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        cursor: ${isDragging ? 'grabbing' : 'grab'};
+        cursor: ${isDragging ? '-webkit-grabbing' : '-webkit-grab'};
+        user-select: none;
+        -webkit-user-select: none;
+        pointer-events: auto;
+      ">
+        <!-- Balão com Nome da Rua, Número de Embarque e Dica -->
+        <div style="
+          background: rgba(11, 18, 36, 0.96);
+          color: #ffffff;
+          padding: 5px 12px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 800;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+          border: 1.5px solid ${isDragging ? '#34d399' : '#10b981'};
+          margin-bottom: 6px;
+          white-space: nowrap;
+          max-width: 210px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          transform: ${isDragging ? 'scale(1.08) translateY(-12px)' : 'scale(1)'};
+          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        ">
+          <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; flex-shrink: 0; animation: pulse 1.5s infinite;"></span>
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+            ${isDragging ? 'Solte no ponto de embarque' : (label || 'Ponto de Embarque')}
+          </span>
         </div>
 
         <!-- Cabeça do Alfinete Executivo -->
-        <div style="position: relative; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;">
-          <div style="position: absolute; width: 34px; height: 34px; border-radius: 50%; background: rgba(16, 185, 129, 0.35); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
-          <div style="width: 32px; height: 32px; border-radius: 10px 10px 10px 2px; transform: rotate(-45deg); background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: 2.5px solid #ffffff; box-shadow: 0 8px 18px rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center;">
+        <div style="
+          position: relative;
+          width: 36px;
+          height: 36px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transform: ${isDragging ? 'translateY(-14px)' : 'translateY(0)'};
+          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        ">
+          <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: rgba(16, 185, 129, 0.35); animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></div>
+          <div style="width: 32px; height: 32px; border-radius: 12px 12px 12px 3px; transform: rotate(-45deg); background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: 2.5px solid #ffffff; box-shadow: 0 8px 20px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center;">
             <div style="width: 10px; height: 10px; border-radius: 50%; background: #ffffff; transform: rotate(45deg); box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);"></div>
           </div>
         </div>
 
         <!-- Agulha Metálica do Alfinete apontando para o chão exato -->
-        <div style="width: 2.5px; height: 16px; background: linear-gradient(to bottom, #059669, #0f172a); margin-top: -2px;"></div>
+        <div style="
+          width: 2.5px;
+          height: 18px;
+          background: linear-gradient(to bottom, #059669, #0f172a);
+          margin-top: -2px;
+          transform: ${isDragging ? 'scaleY(1.4) translateY(-8px)' : 'scaleY(1)'};
+          transition: transform 0.2s;
+        "></div>
         
         <!-- Sombra no Chão (Ponto Zero do GPS) -->
-        <div style="width: 8px; height: 4px; border-radius: 50%; background: rgba(0, 0, 0, 0.5); filter: blur(1px); margin-top: -1px;"></div>
+        <div style="
+          width: ${isDragging ? '14px' : '9px'};
+          height: 4px;
+          border-radius: 50%;
+          background: rgba(0, 0, 0, ${isDragging ? '0.3' : '0.6'});
+          filter: blur(1px);
+          margin-top: -1px;
+          transition: all 0.2s;
+        "></div>
       </div>
     `,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0]
+    iconSize: [220, 110],
+    iconAnchor: [110, 110]
   });
 
-// Alfinete de Destino (Flag) com balão de endereço com número
-const createDestinationIcon = (label?: string) =>
+// Alfinete de Destino (Flag) com balão de endereço e suporte a arrasto
+const createDestinationIcon = (label?: string, isDragging = false) =>
   L.divIcon({
-    className: 'custom-destination-pin',
+    className: 'custom-destination-pin-container',
     html: `
-      <div style="position: relative; width: 180px; height: 85px; margin-left: -90px; margin-top: -85px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; pointer-events: none;">
-        <div style="background: rgba(11, 18, 36, 0.95); color: #FFC800; padding: 4px 10px; border-radius: 9999px; font-size: 10.5px; font-weight: 800; border: 1.5px solid #FFC800; margin-bottom: 5px; box-shadow: 0 8px 20px rgba(0,0,0,0.4); white-space: nowrap; max-width: 180px; overflow: hidden; text-overflow: ellipsis;">
-          🏁 ${label || 'Destino'}
+      <div style="
+        position: relative;
+        width: 220px;
+        height: 100px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        cursor: ${isDragging ? 'grabbing' : 'grab'};
+        cursor: ${isDragging ? '-webkit-grabbing' : '-webkit-grab'};
+        user-select: none;
+        -webkit-user-select: none;
+        pointer-events: auto;
+      ">
+        <div style="
+          background: rgba(11, 18, 36, 0.95);
+          color: #FFC800;
+          padding: 5px 12px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 800;
+          border: 1.5px solid ${isDragging ? '#fbbf24' : '#FFC800'};
+          margin-bottom: 5px;
+          box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+          white-space: nowrap;
+          max-width: 210px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          transform: ${isDragging ? 'scale(1.08) translateY(-12px)' : 'scale(1)'};
+          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        ">
+          🏁 ${isDragging ? 'Solte no ponto de destino' : (label || 'Destino')}
         </div>
-        <div style="width: 30px; height: 30px; border-radius: 50%; background: linear-gradient(135deg, #FFC800 0%, #F59E0B 100%); border: 2.5px solid #0B1224; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #0B1224; box-shadow: 0 6px 16px rgba(0,0,0,0.35);">
+        <div style="
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #FFC800 0%, #F59E0B 100%);
+          border: 2.5px solid #0B1224;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 14px;
+          font-weight: 900;
+          color: #0B1224;
+          box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+          transform: ${isDragging ? 'translateY(-12px)' : 'translateY(0)'};
+          transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+        ">
           🏁
         </div>
-        <div style="width: 2px; height: 14px; background: #0B1224; margin-top: -1px;"></div>
-        <div style="width: 6px; height: 3px; border-radius: 50%; background: rgba(0,0,0,0.5); filter: blur(1px);"></div>
+        <div style="width: 2.5px; height: 16px; background: #0B1224; margin-top: -1px;"></div>
+        <div style="width: 8px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.5); filter: blur(1px);"></div>
       </div>
     `,
-    iconSize: [0, 0],
-    iconAnchor: [0, 0]
+    iconSize: [220, 100],
+    iconAnchor: [110, 100]
   });
 
 const createCarIcon = (isAssigned = false) =>
@@ -124,7 +226,10 @@ export interface PassengerMapProps {
   accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
   onOriginDragEnd?: (coords: [number, number]) => void;
+  onDestinationDragEnd?: (coords: [number, number]) => void;
+  onDragStart?: () => void;
   isPinDraggable?: boolean;
+  isDestinationDraggable?: boolean;
   pinLabel?: string;
   className?: string;
 }
@@ -138,7 +243,10 @@ export default function PassengerMap({
   accuracy,
   onMapClick,
   onOriginDragEnd,
+  onDestinationDragEnd,
+  onDragStart,
   isPinDraggable = true,
+  isDestinationDraggable = true,
   pinLabel,
   className = 'w-full h-full'
 }: PassengerMapProps) {
@@ -148,13 +256,16 @@ export default function PassengerMap({
     ? [origin.latitude, origin.longitude]
     : defaultCenter;
 
+  const [isDraggingOrigin, setIsDraggingOrigin] = useState(false);
+  const [isDraggingDest, setIsDraggingDest] = useState(false);
+
   const alfineteIcon = useMemo(
-    () => createPickupAlfineteIcon(pinLabel || origin?.address || 'Ponto de Embarque'),
-    [pinLabel, origin?.address]
+    () => createPickupAlfineteIcon(pinLabel || origin?.address || 'Ponto de Embarque', isDraggingOrigin),
+    [pinLabel, origin?.address, isDraggingOrigin]
   );
   const destinationIcon = useMemo(
-    () => createDestinationIcon(destination?.address || 'Destino'),
-    [destination?.address]
+    () => createDestinationIcon(destination?.address || 'Destino', isDraggingDest),
+    [destination?.address, isDraggingDest]
   );
   const assignedCarIcon = useMemo(() => createCarIcon(true), []);
   const roamingCarIcon = useMemo(() => createCarIcon(false), []);
@@ -209,14 +320,19 @@ export default function PassengerMap({
           />
         )}
 
-        {/* Alfinete de Embarque (Draggable e Interativo) */}
+        {/* Alfinete de Embarque (Draggable e Interativo em Tempo Real) */}
         {origin && (
           <Marker
             position={[origin.latitude, origin.longitude]}
             icon={alfineteIcon}
             draggable={isPinDraggable}
             eventHandlers={{
+              dragstart: () => {
+                setIsDraggingOrigin(true);
+                if (onDragStart) onDragStart();
+              },
               dragend: (e) => {
+                setIsDraggingOrigin(false);
                 const marker = e.target;
                 const latlng = marker.getLatLng();
                 if (onOriginDragEnd) {
@@ -229,11 +345,26 @@ export default function PassengerMap({
           />
         )}
 
-        {/* Marcador de Destino */}
+        {/* Marcador de Destino (Também Draggable para ajuste de portão/entrada) */}
         {destination && (
           <Marker
             position={[destination.latitude, destination.longitude]}
             icon={destinationIcon}
+            draggable={isDestinationDraggable}
+            eventHandlers={{
+              dragstart: () => {
+                setIsDraggingDest(true);
+                if (onDragStart) onDragStart();
+              },
+              dragend: (e) => {
+                setIsDraggingDest(false);
+                const marker = e.target;
+                const latlng = marker.getLatLng();
+                if (onDestinationDragEnd) {
+                  onDestinationDragEnd([latlng.lat, latlng.lng]);
+                }
+              }
+            }}
           />
         )}
 

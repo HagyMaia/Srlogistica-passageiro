@@ -67,9 +67,27 @@ body {
 
 .custom-passenger-pin,
 .custom-destination-pin,
+.custom-pickup-alfinete-container,
+.custom-destination-pin-container,
 .custom-car-pin {
   background: transparent;
   border: none;
+}
+
+.custom-pickup-alfinete-container,
+.custom-destination-pin-container {
+  cursor: grab !important;
+  cursor: -webkit-grab !important;
+  touch-action: none;
+  z-index: 1000 !important;
+}
+
+.custom-pickup-alfinete-container:active,
+.custom-destination-pin-container:active,
+.leaflet-dragging .custom-pickup-alfinete-container,
+.leaflet-dragging .custom-destination-pin-container {
+  cursor: grabbing !important;
+  cursor: -webkit-grabbing !important;
 }
 
 @layer utilities {

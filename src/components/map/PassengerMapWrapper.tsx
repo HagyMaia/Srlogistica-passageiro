@@ -12,7 +12,10 @@ export interface PassengerMapProps {
   accuracy?: number | null;
   onMapClick?: (coords: [number, number]) => void;
   onOriginDragEnd?: (coords: [number, number]) => void;
+  onDestinationDragEnd?: (coords: [number, number]) => void;
+  onDragStart?: () => void;
   isPinDraggable?: boolean;
+  isDestinationDraggable?: boolean;
   pinLabel?: string;
   className?: string;
 }
