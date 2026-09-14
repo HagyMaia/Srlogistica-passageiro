@@ -159,20 +159,74 @@ const createDestinationIcon = (label?: string, isDragging = false) =>
     iconAnchor: [110, 100]
   });
 
-const createCarIcon = (isAssigned = false) =>
+const createCarIcon = (isAssigned = false, driverName?: string, vehicleModel?: string) =>
   L.divIcon({
-    className: 'custom-car-pin',
+    className: 'custom-car-pin-container',
     html: `
-      <div class="relative flex items-center justify-center ${isAssigned ? 'scale-125 transition-transform' : ''}">
-        <div class="w-8 h-8 rounded-2xl ${isAssigned ? 'bg-brand text-dark-950 border-2 border-dark-900 shadow-2xl' : 'bg-slate-900 text-brand border border-slate-700 shadow-md'} flex items-center justify-center">
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+      <div style="
+        position: relative;
+        width: 180px;
+        height: 80px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        pointer-events: none;
+      ">
+        ${
+          isAssigned
+            ? `
+          <div style="
+            background: rgba(11, 18, 36, 0.95);
+            color: #FFC800;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 10px;
+            font-weight: 800;
+            border: 1.5px solid #FFC800;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 4px;
+            animation: bounce 2s infinite ease-in-out;
+          ">
+            <span>🚗</span>
+            <span>${driverName || 'Motorista SR'}</span>
+            ${vehicleModel ? `<span style="opacity: 0.75; font-weight: 600;">· ${vehicleModel}</span>` : ''}
+          </div>
+        `
+            : ''
+        }
+        <div style="
+          position: relative;
+          width: ${isAssigned ? '38px' : '26px'};
+          height: ${isAssigned ? '38px' : '26px'};
+          border-radius: 50%;
+          background: ${isAssigned ? 'linear-gradient(135deg, #FFC800 0%, #F59E0B 100%)' : '#0B1224'};
+          color: ${isAssigned ? '#0B1224' : '#FFC800'};
+          border: 2.5px solid ${isAssigned ? '#0B1224' : '#334155'};
+          box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: transform 0.3s ease;
+        ">
+          ${
+            isAssigned
+              ? `<span style="position: absolute; inset: -4px; border-radius: 50%; border: 2px solid #FFC800; opacity: 0.75; animation: ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>`
+              : ''
+          }
+          <svg xmlns="http://www.w3.org/2000/svg" width="${isAssigned ? '20' : '14'}" height="${isAssigned ? '20' : '14'}" viewBox="0 0 24 24" fill="currentColor" stroke="none">
             <path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9C1.4 11.2 1 12 1 13v3c0 .6.4 1 1 1h2c0 1.7 1.3 3 3 3s3-1.3 3-3h4c0 1.7 1.3 3 3 3s3-1.3 3-3zM7 18.5c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zm10 0c-.8 0-1.5-.7-1.5-1.5s.7-1.5 1.5-1.5 1.5.7 1.5 1.5-.7 1.5-1.5 1.5zM6.5 10l1-2h4.5l1.5 2H6.5z"/>
           </svg>
         </div>
+        <div style="width: 10px; height: 4px; border-radius: 50%; background: rgba(0,0,0,0.4); filter: blur(1px); margin-top: 1px;"></div>
       </div>
     `,
-    iconSize: [32, 32],
-    iconAnchor: [16, 16]
+    iconSize: [180, 80],
+    iconAnchor: [90, 80]
   });
 
 function MapController({
@@ -189,7 +243,13 @@ function MapController({
   const map = useMap();
 
   useEffect(() => {
-    if (routeCoordinates && routeCoordinates.length > 1) {
+    if (driverLocation && origin && (!destination || !routeCoordinates || routeCoordinates.length === 0)) {
+      const bounds = L.latLngBounds([
+        [driverLocation.latitude, driverLocation.longitude],
+        [origin.latitude, origin.longitude]
+      ]);
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
+    } else if (routeCoordinates && routeCoordinates.length > 1) {
       const bounds = L.latLngBounds(routeCoordinates);
       map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
     } else if (origin && destination) {
@@ -201,7 +261,7 @@ function MapController({
     } else if (origin) {
       map.panTo([origin.latitude, origin.longitude], { animate: true, duration: 0.8 });
     }
-  }, [origin, destination, routeCoordinates, map]);
+  }, [origin, destination, routeCoordinates, driverLocation, map]);
 
   return null;
 }
@@ -267,8 +327,22 @@ export default function PassengerMap({
     () => createDestinationIcon(destination?.address || 'Destino', isDraggingDest),
     [destination?.address, isDraggingDest]
   );
-  const assignedCarIcon = useMemo(() => createCarIcon(true), []);
+  const assignedCarIcon = useMemo(
+    () => createCarIcon(true, driver?.name?.split(' ')[0], driver?.vehicle?.model),
+    [driver?.name, driver?.vehicle?.model]
+  );
   const roamingCarIcon = useMemo(() => createCarIcon(false), []);
+
+  // Rota de aproximação do motorista até o ponto de embarque (quando motorista está a caminho)
+  const approachRoute: Array<[number, number]> = useMemo(() => {
+    if (driver?.current_location && origin && (!routeCoordinates || routeCoordinates.length === 0)) {
+      return [
+        [driver.current_location.latitude, driver.current_location.longitude],
+        [origin.latitude, origin.longitude]
+      ];
+    }
+    return [];
+  }, [driver?.current_location, origin, routeCoordinates]);
 
   return (
     <div className={`relative ${className}`}>
@@ -292,16 +366,30 @@ export default function PassengerMap({
 
         <MapClickHandler onMapClick={onMapClick} />
 
-        {/* Linha da Rota */}
+        {/* Linha da Rota Principal de Viagem */}
         {routeCoordinates.length > 0 && (
           <>
             <Polyline
               positions={routeCoordinates}
-              pathOptions={{ color: '#0B1224', weight: 6, opacity: 0.8 }}
+              pathOptions={{ color: '#0B1224', weight: 6, opacity: 0.85 }}
             />
             <Polyline
               positions={routeCoordinates}
               pathOptions={{ color: '#FFC800', weight: 4, opacity: 1 }}
+            />
+          </>
+        )}
+
+        {/* Linha de Aproximação do Motorista (A caminho do passageiro) */}
+        {approachRoute.length > 1 && (
+          <>
+            <Polyline
+              positions={approachRoute}
+              pathOptions={{ color: '#0B1224', weight: 5, opacity: 0.75, dashArray: '8, 8' }}
+            />
+            <Polyline
+              positions={approachRoute}
+              pathOptions={{ color: '#10B981', weight: 3, opacity: 1, dashArray: '6, 6' }}
             />
           </>
         )}
@@ -345,7 +433,7 @@ export default function PassengerMap({
           />
         )}
 
-        {/* Marcador de Destino (Também Draggable para ajuste de portão/entrada) */}
+        {/* Marcador de Destino */}
         {destination && (
           <Marker
             position={[destination.latitude, destination.longitude]}
@@ -368,7 +456,7 @@ export default function PassengerMap({
           />
         )}
 
-        {/* Marcador do Motorista Designado */}
+        {/* Marcador do Motorista Designado com Transmissão em Tempo Real */}
         {driver?.current_location && (
           <Marker
             position={[driver.current_location.latitude, driver.current_location.longitude]}
