@@ -17,6 +17,7 @@ export interface PassengerMapProps {
   isPinDraggable?: boolean;
   isDestinationDraggable?: boolean;
   pinLabel?: string;
+  focusRouteTrigger?: number;
   className?: string;
 }
 

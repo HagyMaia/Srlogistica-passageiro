@@ -233,35 +233,37 @@ function MapController({
   origin,
   destination,
   routeCoordinates,
-  driverLocation
+  driverLocation,
+  focusRouteTrigger
 }: {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
   driverLocation?: LocationCoordinates | null;
+  focusRouteTrigger?: number;
 }) {
   const map = useMap();
 
   useEffect(() => {
-    if (driverLocation && origin && (!destination || !routeCoordinates || routeCoordinates.length === 0)) {
-      const bounds = L.latLngBounds([
-        [driverLocation.latitude, driverLocation.longitude],
-        [origin.latitude, origin.longitude]
-      ]);
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
-    } else if (routeCoordinates && routeCoordinates.length > 1) {
+    if (routeCoordinates && routeCoordinates.length > 1) {
       const bounds = L.latLngBounds(routeCoordinates);
-      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: true });
     } else if (origin && destination) {
       const bounds = L.latLngBounds([
         [origin.latitude, origin.longitude],
         [destination.latitude, destination.longitude]
       ]);
-      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16 });
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
+    } else if (driverLocation && origin) {
+      const bounds = L.latLngBounds([
+        [driverLocation.latitude, driverLocation.longitude],
+        [origin.latitude, origin.longitude]
+      ]);
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
     } else if (origin) {
       map.panTo([origin.latitude, origin.longitude], { animate: true, duration: 0.8 });
     }
-  }, [origin, destination, routeCoordinates, driverLocation, map]);
+  }, [origin, destination, routeCoordinates, driverLocation, focusRouteTrigger, map]);
 
   return null;
 }
@@ -291,6 +293,7 @@ export interface PassengerMapProps {
   isPinDraggable?: boolean;
   isDestinationDraggable?: boolean;
   pinLabel?: string;
+  focusRouteTrigger?: number;
   className?: string;
 }
 
@@ -308,6 +311,7 @@ export default function PassengerMap({
   isPinDraggable = true,
   isDestinationDraggable = true,
   pinLabel,
+  focusRouteTrigger,
   className = 'w-full h-full'
 }: PassengerMapProps) {
   // Posição padrão de Manaus como centro de visualização
@@ -362,6 +366,7 @@ export default function PassengerMap({
           destination={destination}
           routeCoordinates={routeCoordinates}
           driverLocation={driver?.current_location}
+          focusRouteTrigger={focusRouteTrigger}
         />
 
         <MapClickHandler onMapClick={onMapClick} />

@@ -204,6 +204,7 @@ export default function HomePage() {
   const [isSearching, setIsSearching] = useState(false);
   const [activeStep, setActiveStep] = useState<'MAP' | 'SELECT_DESTINATION' | 'SELECT_CATEGORY'>('MAP');
   const [isPanelCollapsed, setIsPanelCollapsed] = useState(false);
+  const [recenterRouteCount, setRecenterRouteCount] = useState(0);
 
   // Modo de Solicitação: Imediato ('NOW') ou Agendado ('SCHEDULE')
   const [rideMode, setRideMode] = useState<'NOW' | 'SCHEDULE'>('NOW');
@@ -484,6 +485,34 @@ export default function HomePage() {
     setTimeout(() => setGpsToastMsg(null), 2500);
   }, [setDestination, setRouteInfo]);
 
+  // Foca e exibe o trajeto completo no mapa
+  const handleShowRoute = useCallback(async () => {
+    setRecenterRouteCount((prev) => prev + 1);
+    const activeOrigin = currentTrip?.origin || origin || location;
+    const activeDest = currentTrip?.destination || destination;
+
+    if (
+      activeOrigin &&
+      activeDest &&
+      (!currentTrip?.routeCoordinates || currentTrip.routeCoordinates.length === 0)
+    ) {
+      try {
+        const route = await calculateRoute(activeOrigin, activeDest);
+        if (route?.coordinates?.length) {
+          setRouteInfo({
+            coordinates: route.coordinates,
+            distanceMeters: route.distanceMeters,
+            durationSeconds: route.durationSeconds,
+            estimatedFare: currentTrip?.estimatedFare || estimatedFare || 0
+          });
+        }
+      } catch (_) {}
+    }
+
+    setGpsToastMsg('🗺️ Visualizando o trajeto completo no mapa');
+    setTimeout(() => setGpsToastMsg(null), 2500);
+  }, [currentTrip, origin, destination, location, estimatedFare, setRouteInfo]);
+
   // Quando o usuário arrasta o alfinete de embarque ou clica no mapa para marcar o local exato
   const handleOriginPinMoved = useCallback(
     async ([lat, lng]: [number, number]) => {
@@ -714,18 +743,23 @@ export default function HomePage() {
       {/* MAPA INTERATIVO PRINCIPAL AO VIVO COM ALFINETE DE EMBARQUE */}
       <div className="absolute inset-0 z-0">
         <PassengerMapWrapper
-          origin={origin || location}
-          destination={destination}
-          routeCoordinates={routeCoordinates}
+          origin={currentTrip?.origin || origin || location}
+          destination={currentTrip?.destination || destination}
+          routeCoordinates={
+            currentTrip?.routeCoordinates && currentTrip.routeCoordinates.length > 0
+              ? currentTrip.routeCoordinates
+              : routeCoordinates
+          }
           driver={currentTrip?.driver}
           nearbyDrivers={onlineDrivers}
           accuracy={accuracy}
           onMapClick={handleOriginPinMoved}
           onOriginDragEnd={handleOriginPinMoved}
           onDestinationDragEnd={handleDestinationPinMoved}
-          isPinDraggable={true}
-          isDestinationDraggable={true}
-          pinLabel={origin?.address || location?.address || 'Alfinete de Embarque'}
+          isPinDraggable={!currentTrip || currentTrip.status === 'IDLE'}
+          isDestinationDraggable={!currentTrip || currentTrip.status === 'IDLE'}
+          pinLabel={currentTrip?.origin?.address || origin?.address || location?.address || 'Alfinete de Embarque'}
+          focusRouteTrigger={recenterRouteCount}
           className="w-full h-full"
         />
       </div>
@@ -778,7 +812,7 @@ export default function HomePage() {
         </div>
 
         {/* Notificação Flutuante / Toast de Chegada do Motorista */}
-        {arrivalNotification && (
+        {arrivalNotification && currentTrip?.status === 'DRIVER_ARRIVED' && (
           <div className="pointer-events-auto self-center w-full max-w-md rounded-2xl bg-emerald-600 text-white p-3 shadow-2xl border border-emerald-400 flex items-center justify-between animate-in slide-in-from-top-3 duration-300">
             <div className="flex items-center gap-2.5">
               <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-emerald-700 font-black shrink-0 shadow-sm">
@@ -809,6 +843,18 @@ export default function HomePage() {
 
       {/* BOTÕES FLUTUANTES NO MAPA: RECENTRALIZAR GPS, EXIBIR/OCULTAR & LIMPAR ROTA */}
       <div className="absolute right-3.5 bottom-[350px] z-10 flex flex-col gap-2.5 items-end pointer-events-none">
+        {/* Botão Ver Trajeto / Rota Completa no Mapa */}
+        {(currentTrip || destination) && (
+          <button
+            onClick={handleShowRoute}
+            className="pointer-events-auto flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-slate-900/95 dark:bg-dark-900/95 text-brand shadow-2xl border border-brand/50 hover:scale-105 active:scale-95 transition backdrop-blur-xl text-xs font-black"
+            title="Ver trajeto completo no mapa"
+          >
+            <Navigation size={16} className="text-brand" />
+            <span>Ver Rota</span>
+          </button>
+        )}
+
         {/* Botão de Exibir/Ocultar Painel para visualização ampla do mapa */}
         <button
           onClick={() => setIsPanelCollapsed((prev) => !prev)}
@@ -887,7 +933,11 @@ export default function HomePage() {
                 currentTrip.status === 'DRIVER_ARRIVING' ||
                 currentTrip.status === 'DRIVER_ARRIVED' ||
                 currentTrip.status === 'IN_PROGRESS') && (
-                <PassengerActiveRideSheet trip={currentTrip} onCancel={handleCancelAndReset} />
+                <PassengerActiveRideSheet
+                  trip={currentTrip}
+                  onCancel={handleCancelAndReset}
+                  onShowRoute={handleShowRoute}
+                />
               )}
 
         {/* FLUXO 3: DASHBOARD DE SOLICITAÇÃO / ESCOLHA DE DESTINO */}

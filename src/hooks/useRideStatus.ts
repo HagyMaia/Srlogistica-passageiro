@@ -27,7 +27,14 @@ function moveTowards(
 }
 
 export function useRideStatus() {
-  const { currentTrip, changeStatus, setDriver, updateDriverLocation, addDriverMessage } = usePassengerTripStore();
+  const {
+    currentTrip,
+    changeStatus,
+    setDriver,
+    updateDriverLocation,
+    addDriverMessage,
+    loadChatHistory
+  } = usePassengerTripStore();
   const tripId = currentTrip?.id;
   const status = currentTrip?.status;
   const routeIndexRef = useRef<number>(0);
@@ -37,6 +44,8 @@ export function useRideStatus() {
     if (!tripId || status === 'COMPLETED' || status === 'CANCELLED' || status === 'IDLE') {
       return;
     }
+
+    loadChatHistory(tripId);
 
     // Função para carregar dados do motorista real quando associado à corrida
     const fetchRealDriver = async (driverId: string) => {

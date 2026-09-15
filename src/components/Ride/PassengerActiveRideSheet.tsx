@@ -27,12 +27,14 @@ interface PassengerActiveRideSheetProps {
   trip: PassengerTrip;
   onCancel: () => void;
   onSendMessage?: (msg: string) => void;
+  onShowRoute?: () => void;
 }
 
 export function PassengerActiveRideSheet({
   trip,
   onCancel,
-  onSendMessage
+  onSendMessage,
+  onShowRoute
 }: PassengerActiveRideSheetProps) {
   const [showChatModal, setShowChatModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
@@ -51,28 +53,28 @@ export function PassengerActiveRideSheet({
           title: 'Motorista a caminho',
           subtitle: 'Deslocando-se até seu ponto de embarque',
           badge: 'A Caminho',
-          color: 'bg-amber-500/10 text-amber-600 dark:text-brand border-amber-500/30'
+          color: 'bg-amber-500/10 text-amber-600 dark:text-brand border-amber-500/30 hover:bg-amber-500/15'
         };
       case 'DRIVER_ARRIVED':
         return {
           title: 'Motorista no local!',
           subtitle: 'Aguardando no ponto de embarque',
           badge: 'No Local',
-          color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+          color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/15'
         };
       case 'IN_PROGRESS':
         return {
           title: 'Viagem em andamento',
           subtitle: 'A caminho do seu destino com conforto e segurança',
           badge: 'Em Rota',
-          color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30'
+          color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30 hover:bg-blue-500/15'
         };
       default:
         return {
           title: 'Corrida confirmada',
           subtitle: 'Acompanhe pelo mapa em tempo real',
           badge: 'Ativa',
-          color: 'bg-brand/10 text-brand-700 dark:text-brand border-brand/30'
+          color: 'bg-brand/10 text-brand-700 dark:text-brand border-brand/30 hover:bg-brand/15'
         };
     }
   };
@@ -82,8 +84,12 @@ export function PassengerActiveRideSheet({
   return (
     <>
       <div className="w-full rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white/95 dark:bg-dark-900/95 backdrop-blur-xl p-4 shadow-2xl space-y-3.5">
-        {/* Status Banner */}
-        <div className={`flex items-center justify-between rounded-2xl border p-3 ${statusInfo.color}`}>
+        {/* Status Banner Interativo com Foco no Trajeto */}
+        <div
+          onClick={() => onShowRoute?.()}
+          className={`flex items-center justify-between rounded-2xl border p-3 cursor-pointer transition-all active:scale-[0.99] group shadow-sm ${statusInfo.color}`}
+          title="Clique para ver o trajeto completo no mapa"
+        >
           <div className="flex items-center gap-2.5">
             <div className="flex h-3 w-3 relative">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
@@ -94,9 +100,17 @@ export function PassengerActiveRideSheet({
               <p className="text-[11px] opacity-80">{statusInfo.subtitle}</p>
             </div>
           </div>
-          <span className="text-[11px] font-black uppercase px-2 py-0.5 rounded-lg border border-current">
-            {statusInfo.badge}
-          </span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onShowRoute?.();
+            }}
+            className="text-[11px] font-black uppercase px-2.5 py-1 rounded-xl border border-current bg-white/40 dark:bg-dark-900/40 hover:bg-white/80 dark:hover:bg-dark-900/80 active:scale-95 transition flex items-center gap-1 shadow-sm"
+          >
+            <span>{statusInfo.badge}</span>
+            <Navigation size={12} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+          </button>
         </div>
 
         {/* Notificação Especial de Chegada no Local de Embarque */}

@@ -53,6 +53,7 @@ interface PassengerTripStore {
   updateDriverLocation: (loc: LocationCoordinates) => void;
   sendChatMessage: (text: string) => Promise<void>;
   addDriverMessage: (text: string) => void;
+  loadChatHistory: (tripId: string) => Promise<void>;
   markChatAsRead: () => void;
   requestRide: (passenger: { id: string; name: string; phone?: string }) => Promise<PassengerTrip | null>;
   scheduleRide: (
@@ -274,7 +275,12 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     }
 
     persistTrip(updated);
-    set({ currentTrip: updated, chatMessages: updatedMessages, unreadChatCount: newUnread });
+    set({
+      currentTrip: updated,
+      chatMessages: updatedMessages,
+      unreadChatCount: newUnread,
+      arrivalNotification: null
+    });
   },
 
   setDriver: (driver) => {
@@ -467,7 +473,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     } catch (_) {}
   },
 
-  markChatAsRead: () => {
+    markChatAsRead: () => {
     const { chatMessages, currentTrip } = get();
     const readMessages = chatMessages.map((m) => ({ ...m, isRead: true }));
     if (currentTrip) {
@@ -477,6 +483,57 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     } else {
       set({ chatMessages: readMessages, unreadChatCount: 0 });
     }
+  },
+
+  loadChatHistory: async (tripId: string) => {
+    if (!tripId || !isSupabaseConfigured) return;
+    try {
+      const { data, error } = await supabase
+        .from('ride_messages')
+        .select('*')
+        .eq('ride_id', tripId)
+        .order('created_at', { ascending: true });
+
+      if (!error && Array.isArray(data) && data.length > 0) {
+        const { chatMessages, currentTrip } = get();
+        const existingIds = new Set(chatMessages.map((m) => m.id));
+        const formatted: ChatMessage[] = data.map((item) => {
+          const role = String(item.sender_role || item.sender_type || item.sender || '').toLowerCase();
+          const isMe = role === 'passenger';
+          return {
+            id: String(item.id || `msg-${Date.now()}`),
+            tripId: String(item.ride_id || tripId),
+            sender: isMe ? 'passenger' : 'driver',
+            senderName: item.sender_name || (isMe ? 'Você' : currentTrip?.driver?.name || 'Motorista'),
+            text: String(item.content || item.text || item.message || ''),
+            timestamp: item.created_at
+              ? new Date(item.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+              : new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+            isRead: true
+          };
+        });
+
+        const merged = [...chatMessages];
+        let hasNew = false;
+        for (const f of formatted) {
+          if (!existingIds.has(f.id) && !merged.some((m) => m.text === f.text && m.sender === f.sender)) {
+            existingIds.add(f.id);
+            merged.push(f);
+            hasNew = true;
+          }
+        }
+
+        if (hasNew || chatMessages.length === 0) {
+          if (currentTrip) {
+            const updatedTrip = { ...currentTrip, messages: merged };
+            persistTrip(updatedTrip);
+            set({ currentTrip: updatedTrip, chatMessages: merged });
+          } else {
+            set({ chatMessages: merged });
+          }
+        }
+      }
+    } catch (_) {}
   },
 
   requestRide: async (passenger) => {

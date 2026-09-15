@@ -32,22 +32,42 @@ const QUICK_REPLIES = [
 ];
 
 export function PassengerChatModal({ isOpen, onClose, trip }: PassengerChatModalProps) {
-  const { chatMessages, sendChatMessage, isDriverTyping, markChatAsRead } = usePassengerTripStore();
+  const {
+    chatMessages,
+    sendChatMessage,
+    isDriverTyping,
+    markChatAsRead,
+    loadChatHistory
+  } = usePassengerTripStore();
   const [inputText, setInputText] = useState('');
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const driver = trip.driver;
 
-  // Rola para a última mensagem ao abrir ou quando nova mensagem chega
+  // Carrega histórico e rola para a última mensagem ao abrir
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && trip.id) {
+      loadChatHistory(trip.id);
       markChatAsRead();
       setTimeout(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
       }, 100);
+
+      // Polling ativo a cada 1.5s enquanto o modal estiver aberto
+      const interval = setInterval(() => {
+        loadChatHistory(trip.id);
+      }, 1500);
+
+      return () => clearInterval(interval);
     }
-  }, [isOpen, chatMessages.length, isDriverTyping, markChatAsRead]);
+  }, [isOpen, trip.id, loadChatHistory, markChatAsRead]);
+
+  useEffect(() => {
+    if (isOpen) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [isOpen, chatMessages.length, isDriverTyping]);
 
   if (!isOpen) return null;
 
