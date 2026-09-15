@@ -341,49 +341,71 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       try {
         const payload = {
           id: userMsg.id,
+          ride_id: currentTrip.id,
           trip_id: currentTrip.id,
           tripId: currentTrip.id,
+          sender_id: currentTrip.passengerId || null,
+          sender_role: 'passenger',
           sender: 'passenger',
           sender_type: 'passenger',
           sender_name: currentTrip.passengerName || 'Passageiro',
-          text: text.trim(),
           content: text.trim(),
+          text: text.trim(),
+          message: text.trim(),
+          read: false,
           timestamp: userMsg.timestamp,
           created_at: new Date().toISOString()
         };
 
-        // Broadcast nos canais comuns
+        // Broadcast nos canais comuns e específicos do app do motorista
         const channelNames = [
+          `chat_realtime_${currentTrip.id}`,
           `passenger-ride-${currentTrip.id}`,
+          `chat:${currentTrip.id}`,
           `trip:${currentTrip.id}`,
           `ride:${currentTrip.id}`,
-          `chat:${currentTrip.id}`,
+          `sync_rides_${currentTrip.id}`,
           `trip-messages-${currentTrip.id}`
         ];
 
         for (const chName of channelNames) {
-          const ch = supabase.channel(chName);
-          ch.send({
-            type: 'broadcast',
-            event: 'chat_message',
-            payload
-          }).catch(() => {});
-          ch.send({
-            type: 'broadcast',
-            event: 'passenger_message',
-            payload
-          }).catch(() => {});
+          try {
+            const ch = supabase.channel(chName);
+            ch.send({
+              type: 'broadcast',
+              event: 'chat_message',
+              payload
+            }).catch(() => {});
+            ch.send({
+              type: 'broadcast',
+              event: 'passenger_message',
+              payload
+            }).catch(() => {});
+            ch.send({
+              type: 'broadcast',
+              event: 'message',
+              payload
+            }).catch(() => {});
+          } catch (_) {}
         }
 
         // 2. Gravação em tabela se existir
-        await supabase.from('trip_messages').insert({
+        await supabase.from('ride_messages').insert([{
+          ride_id: currentTrip.id,
+          sender_role: 'passenger',
+          sender_name: currentTrip.passengerName || 'Passageiro',
+          content: text.trim(),
+          read: false
+        }]);
+
+        await supabase.from('trip_messages').insert([{
           trip_id: currentTrip.id,
           sender_type: 'passenger',
           sender_id: currentTrip.passengerId,
-          sender_name: currentTrip.passengerName,
+          sender_name: currentTrip.passengerName || 'Passageiro',
           content: text.trim(),
           created_at: new Date().toISOString()
-        });
+        }]);
       } catch (_) {}
     }
   },
@@ -392,12 +414,20 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     const { currentTrip, chatMessages } = get();
     if (!currentTrip || !text.trim()) return;
 
+    const cleanText = text.trim();
+
+    // Evita duplicação se a mensagem idêntica já foi adicionada nos últimos 5 segundos
+    const recentDuplicate = chatMessages.slice(-5).some(
+      (m) => m.sender === 'driver' && m.text === cleanText
+    );
+    if (recentDuplicate) return;
+
     const driverMsg: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       tripId: currentTrip.id,
       sender: 'driver',
       senderName: currentTrip.driver?.name || 'Motorista',
-      text: text.trim(),
+      text: cleanText,
       timestamp: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
       isRead: false
     };
@@ -411,11 +441,30 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       unreadChatCount: get().unreadChatCount + 1
     });
 
-    if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
-      try {
-        navigator.vibrate(150);
-      } catch (_) {}
-    }
+    // Feedback sonoro sintetizado e vibração no passageiro
+    try {
+      if (typeof window !== 'undefined') {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const now = ctx.currentTime;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, now); // D5
+          osc.frequency.setValueAtTime(880.00, now + 0.08); // A5
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.3);
+        }
+        if ('navigator' in window && 'vibrate' in navigator) {
+          navigator.vibrate([100, 50, 100]);
+        }
+      }
+    } catch (_) {}
   },
 
   markChatAsRead: () => {

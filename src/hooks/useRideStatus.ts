@@ -31,6 +31,7 @@ export function useRideStatus() {
   const tripId = currentTrip?.id;
   const status = currentTrip?.status;
   const routeIndexRef = useRef<number>(0);
+  const processedMessageIdsRef = useRef<Set<string>>(new Set<string>());
 
   useEffect(() => {
     if (!tripId || status === 'COMPLETED' || status === 'CANCELLED' || status === 'IDLE') {
@@ -194,6 +195,25 @@ export function useRideStatus() {
       }
     };
 
+    // Processa mensagem recebida do motorista
+    const handleIncomingChatMessage = (raw: any) => {
+      const msg = raw?.payload || raw;
+      if (!msg) return;
+
+      const role = String(msg.sender_role || msg.sender || msg.sender_type || '').toLowerCase();
+      // Ignora mensagens enviadas pelo próprio passageiro
+      if (role === 'passenger') return;
+
+      const text = msg.content || msg.text || msg.message || '';
+      if (!text || typeof text !== 'string') return;
+
+      const msgKey = String(msg.id || `${text}_${msg.created_at || msg.timestamp}`);
+      if (processedMessageIdsRef.current.has(msgKey)) return;
+      processedMessageIdsRef.current.add(msgKey);
+
+      addDriverMessage(text);
+    };
+
     // 0. Verificação imediata no banco de dados ao iniciar
     const checkImmediateStatus = async () => {
       try {
@@ -227,20 +247,64 @@ export function useRideStatus() {
       )
       .subscribe();
 
-    // 2. Escuta Broadcast em tempo real para Chat, Status e Cancelamento
+    // 2. Canal Realtime chat_realtime_${tripId} (compatível diretamente com o app do motorista)
+    const chatRealtimeChannel = supabase
+      .channel(`chat_realtime_${tripId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'ride_messages',
+          filter: `ride_id=eq.${tripId}`
+        },
+        (payload: any) => {
+          handleIncomingChatMessage(payload.new);
+        }
+      )
+      .on('broadcast', { event: 'chat_message' }, (payload: any) => {
+        handleIncomingChatMessage(payload);
+      })
+      .on('broadcast', { event: 'driver_message' }, (payload: any) => {
+        handleIncomingChatMessage(payload);
+      })
+      .on('broadcast', { event: 'message' }, (payload: any) => {
+        handleIncomingChatMessage(payload);
+      })
+      .on('broadcast', { event: 'status_update' }, async (payload: any) => {
+        const data = payload.payload || payload;
+        if (data?.status) {
+          await processStatusUpdate(data.status, data.driver_id);
+        }
+      })
+      .on('broadcast', { event: 'driver_arrived' }, () => {
+        changeStatus('DRIVER_ARRIVED');
+      })
+      .on('broadcast', { event: 'ride_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'trip_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'ride_cancelled' }, () => {
+        changeStatus('CANCELLED');
+      })
+      .on('broadcast', { event: 'ride_completed' }, () => {
+        changeStatus('COMPLETED');
+      })
+      .subscribe();
+
+    // 3. Canal Broadcast passenger-ride-${tripId} para Chat, Status e Cancelamento
     const broadcastChannel = supabase
       .channel(`passenger-ride-${tripId}`)
       .on('broadcast', { event: 'chat_message' }, (payload: any) => {
-        const msg = payload.payload || payload;
-        if (msg && (msg.sender === 'driver' || msg.sender_type === 'driver')) {
-          addDriverMessage(msg.text || msg.content || '');
-        }
+        handleIncomingChatMessage(payload);
       })
       .on('broadcast', { event: 'driver_message' }, (payload: any) => {
-        const msg = payload.payload || payload;
-        if (msg) {
-          addDriverMessage(msg.text || msg.content || '');
-        }
+        handleIncomingChatMessage(payload);
+      })
+      .on('broadcast', { event: 'message' }, (payload: any) => {
+        handleIncomingChatMessage(payload);
       })
       .on('broadcast', { event: 'status_update' }, async (payload: any) => {
         const data = payload.payload || payload;
@@ -254,6 +318,15 @@ export function useRideStatus() {
       .on('broadcast', { event: 'driver_arrived' }, () => {
         changeStatus('DRIVER_ARRIVED');
       })
+      .on('broadcast', { event: 'ride_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'trip_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'ride_completed' }, () => {
+        changeStatus('COMPLETED');
+      })
       .on('broadcast', { event: 'driver_location' }, (payload: any) => {
         const data = payload.payload || payload;
         if (data && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
@@ -262,7 +335,30 @@ export function useRideStatus() {
       })
       .subscribe();
 
-    // 3. Polling de alta confiabilidade (a cada 1.5 segundos) para garantir sincronia instantânea
+    // 4. Canal sync_rides_${tripId}
+    const syncChannel = supabase
+      .channel(`sync_rides_${tripId}`)
+      .on('broadcast', { event: 'driver_arrived' }, () => {
+        changeStatus('DRIVER_ARRIVED');
+      })
+      .on('broadcast', { event: 'ride_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'trip_started' }, () => {
+        changeStatus('IN_PROGRESS');
+      })
+      .on('broadcast', { event: 'status_update' }, async (payload: any) => {
+        const data = payload.payload || payload;
+        if (data?.status) {
+          await processStatusUpdate(data.status, data.driver_id);
+        }
+      })
+      .on('broadcast', { event: 'ride_cancelled' }, () => {
+        changeStatus('CANCELLED');
+      })
+      .subscribe();
+
+    // 5. Polling de alta confiabilidade (a cada 1 segundo) para garantir sincronia instantânea
     const pollInterval = setInterval(async () => {
       try {
         const { data: rideRow } = await supabase
@@ -274,6 +370,22 @@ export function useRideStatus() {
         if (rideRow) {
           await processStatusUpdate(rideRow.status, rideRow.driver_id);
         }
+
+        // Se houver mensagens gravadas no banco na tabela ride_messages
+        try {
+          const { data: dbMessages } = await supabase
+            .from('ride_messages')
+            .select('*')
+            .eq('ride_id', tripId)
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (Array.isArray(dbMessages)) {
+            for (const m of dbMessages) {
+              handleIncomingChatMessage(m);
+            }
+          }
+        } catch (_) {}
 
         // Se houver um motorista atribuído, sincroniza coordenadas reais do motorista se disponíveis
         const driverId = rideRow?.driver_id || currentTrip?.driver?.id;
@@ -293,9 +405,9 @@ export function useRideStatus() {
           }
         }
       } catch (_) {}
-    }, 1500);
+    }, 1000);
 
-    // 4. Transmissão Contínua e Movimentação Suave do Motorista no Mapa
+    // 6. Transmissão Contínua e Movimentação Suave do Motorista no Mapa
     const locationInterval = setInterval(() => {
       const liveTrip = usePassengerTripStore.getState().currentTrip;
       if (!liveTrip || !liveTrip.driver || !liveTrip.driver.current_location) return;
@@ -345,7 +457,9 @@ export function useRideStatus() {
       clearInterval(pollInterval);
       clearInterval(locationInterval);
       supabase.removeChannel(ridesChannel);
+      supabase.removeChannel(chatRealtimeChannel);
       supabase.removeChannel(broadcastChannel);
+      supabase.removeChannel(syncChannel);
     };
   }, [tripId, status, changeStatus, setDriver, updateDriverLocation, addDriverMessage]);
 
