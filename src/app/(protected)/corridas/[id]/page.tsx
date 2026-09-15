@@ -63,6 +63,40 @@ export default function CorridaDetalhePage({ params }: { params: Promise<{ id: s
               total: ride.fare_amount || 20.00
             }
           });
+          return;
+        }
+
+        // Se não achou no banco, tenta buscar no histórico local
+        if (typeof window !== 'undefined') {
+          try {
+            const localHistory = JSON.parse(localStorage.getItem('sr_passenger_ride_history') || '[]');
+            const found = localHistory.find((h: any) => h.id === resolvedParams.id);
+            if (found) {
+              setRideData({
+                id: found.id,
+                date: found.created_at || new Date().toISOString(),
+                pickup: found.pickup,
+                dropoff: found.dropoff,
+                distance: '4.5 km',
+                duration: '12 min',
+                category: found.category || 'SR Pop',
+                driver: found.driver_name ? {
+                  name: found.driver_name,
+                  vehicle: found.driver_vehicle || 'Veículo Padrão SR',
+                  avatar: found.driver_avatar,
+                  rating: 4.95
+                } : null,
+                payment: {
+                  method: 'PIX',
+                  base: 5.50,
+                  km: found.fare * 0.6,
+                  time: found.fare * 0.4 - 5.50,
+                  discount: 0.00,
+                  total: found.fare
+                }
+              });
+            }
+          } catch (_) {}
         }
       } catch (e) {
         console.warn('Erro ao carregar detalhes da corrida:', e);

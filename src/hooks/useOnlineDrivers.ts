@@ -16,29 +16,9 @@ export interface OnlineDriverMarker {
   avatar_url?: string;
 }
 
-// Gera um deslocamento determinístico e estável baseado no ID do motorista
-function getDeterministicOffset(id: string, index: number): { dLat: number; dLng: number } {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) {
-    hash = (hash << 5) - hash + id.charCodeAt(i);
-    hash |= 0;
-  }
-  const angles = [45, 135, 225, 315, 90, 180, 270, 0];
-  const angle = ((Math.abs(hash) % 360) + index * 45) * (Math.PI / 180);
-  const distance = 0.003 + ((Math.abs(hash) % 15) * 0.0004); // ~350m a 900m do centro/usuário
-
-  return {
-    dLat: Math.sin(angle) * distance,
-    dLng: Math.cos(angle) * distance
-  };
-}
-
-export function useOnlineDrivers(userLocation?: LocationCoordinates | null) {
+export function useOnlineDrivers(_userLocation?: LocationCoordinates | null) {
   const [onlineDrivers, setOnlineDrivers] = useState<OnlineDriverMarker[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const baseLat = userLocation?.latitude || -3.1037;
-  const baseLng = userLocation?.longitude || -60.0125;
 
   const fetchOnlineDrivers = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -48,28 +28,43 @@ export function useOnlineDrivers(userLocation?: LocationCoordinates | null) {
     }
 
     try {
-      // Busca motoristas que estão Aprovados e com work_status ONLINE
+      // Consulta direta na tabela de motoristas: apenas usuários com work_status ONLINE
       const { data, error } = await supabase
         .from('motoristas')
-        .select('*')
-        .eq('work_status', 'ONLINE');
+        .select('*');
 
       if (error) {
-        console.warn('Erro ao carregar motoristas online do Supabase:', error.message);
+        console.warn('Erro ao carregar motoristas do Supabase:', error.message);
         setOnlineDrivers([]);
         return;
       }
 
       if (data && Array.isArray(data)) {
-        // Filtra apenas os que são aprovados
-        const approvedDrivers = data.filter((d: any) => {
-          const st = (d.status || '').toLowerCase();
-          const vst = (d.vehicle_status || '').toLowerCase();
-          return st === 'aprovado' || vst === 'aprovado';
+        // Filtra estritamente motoristas REAIS, ATIVOS, APROVADOS e com work_status ONLINE
+        const realOnlineDrivers = data.filter((d: any) => {
+          const workStatus = (d.work_status || '').trim().toUpperCase();
+          const status = (d.status || '').trim().toLowerCase();
+          const vehicleStatus = (d.vehicle_status || '').trim().toLowerCase();
+
+          const isOnline = workStatus === 'ONLINE' || workStatus === 'DISPONIVEL' || workStatus === 'LIVRE';
+          const isApproved = status === 'aprovado' || status === 'ativo' || vehicleStatus === 'aprovado' || status === 'approved';
+
+          if (!isOnline || !isApproved) return false;
+
+          // Validação de coordenadas reais de GPS (rejeita coordenadas zeradas, inválidas ou ausentes)
+          const lat = typeof d.latitude === 'number' ? d.latitude : typeof d.lat === 'number' ? d.lat : typeof d.current_lat === 'number' ? d.current_lat : null;
+          const lng = typeof d.longitude === 'number' ? d.longitude : typeof d.lng === 'number' ? d.lng : typeof d.current_lng === 'number' ? d.current_lng : null;
+
+          if (lat === null || lng === null || isNaN(lat) || isNaN(lng)) return false;
+          // Rejeita ponto (0, 0) ou fora de limites geográficos válidos
+          if (Math.abs(lat) < 0.0001 && Math.abs(lng) < 0.0001) return false;
+
+          return true;
         });
 
-        const mapped: OnlineDriverMarker[] = approvedDrivers.map((d: any, index: number) => {
-          const offset = getDeterministicOffset(d.id || `drv-${index}`, index);
+        const mapped: OnlineDriverMarker[] = realOnlineDrivers.map((d: any) => {
+          const lat = typeof d.latitude === 'number' ? d.latitude : typeof d.lat === 'number' ? d.lat : d.current_lat;
+          const lng = typeof d.longitude === 'number' ? d.longitude : typeof d.lng === 'number' ? d.lng : d.current_lng;
           const name = d.nome || d.nome_social || d.nome_completo || 'Motorista SR';
           const vehicle = `${d.marca_veiculo || 'Carro'} ${d.modelo_veiculo || ''} ${d.cor_veiculo ? `· ${d.cor_veiculo}` : ''}`.trim();
           const plate = d.placa_veiculo || 'SR-0000';
@@ -78,8 +73,8 @@ export function useOnlineDrivers(userLocation?: LocationCoordinates | null) {
           return {
             id: d.id,
             name,
-            latitude: baseLat + offset.dLat,
-            longitude: baseLng + offset.dLng,
+            latitude: lat,
+            longitude: lng,
             vehicle,
             plate,
             rating,
@@ -98,14 +93,21 @@ export function useOnlineDrivers(userLocation?: LocationCoordinates | null) {
     } finally {
       setLoading(false);
     }
-  }, [baseLat, baseLng]);
+  }, []);
 
   useEffect(() => {
     fetchOnlineDrivers();
 
-    if (!isSupabaseConfigured) return;
+    // Polling contínuo de 4 segundos para manter o mapa 100% atualizado com os motoristas reais
+    const interval = setInterval(() => {
+      fetchOnlineDrivers();
+    }, 4000);
 
-    // Escuta em tempo real mudanças na tabela motoristas (quando motoristas ficam online/offline)
+    if (!isSupabaseConfigured) {
+      return () => clearInterval(interval);
+    }
+
+    // Escuta em tempo real no Supabase quando motoristas entram/saem ou alteram status
     const channel = supabase
       .channel('realtime:online-motoristas')
       .on(
@@ -122,6 +124,7 @@ export function useOnlineDrivers(userLocation?: LocationCoordinates | null) {
       .subscribe();
 
     return () => {
+      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, [fetchOnlineDrivers]);

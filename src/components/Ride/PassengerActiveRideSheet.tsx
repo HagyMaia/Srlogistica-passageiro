@@ -99,6 +99,23 @@ export function PassengerActiveRideSheet({
           </span>
         </div>
 
+        {/* Notificação Especial de Chegada no Local de Embarque */}
+        {trip.status === 'DRIVER_ARRIVED' && (
+          <div className="rounded-2xl bg-emerald-500/15 border border-emerald-500/40 p-3 flex items-center gap-3 animate-in fade-in">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500 text-white font-black shrink-0 shadow-md">
+              <Car size={20} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h4 className="text-xs font-black text-emerald-800 dark:text-emerald-300 uppercase tracking-wide">
+                Motorista chegou ao local!
+              </h4>
+              <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                Seu motorista está aguardando você no ponto de embarque.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Card do Motorista e Veículo (Somente dados reais) */}
         {driver ? (
           <div className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-3.5 border border-slate-100 dark:border-dark-800 gap-3">

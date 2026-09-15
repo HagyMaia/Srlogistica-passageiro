@@ -175,6 +175,10 @@ export default function HomePage() {
     scheduledTrips,
     isCreating,
     error: storeError,
+    cancellationNotification,
+    arrivalNotification,
+    dismissCancellationNotification,
+    dismissArrivalNotification,
     setOrigin,
     setDestination,
     swapOriginAndDestination,
@@ -772,6 +776,27 @@ export default function HomePage() {
             <ThemeToggle />
           </div>
         </div>
+
+        {/* Notificação Flutuante / Toast de Chegada do Motorista */}
+        {arrivalNotification && (
+          <div className="pointer-events-auto self-center w-full max-w-md rounded-2xl bg-emerald-600 text-white p-3 shadow-2xl border border-emerald-400 flex items-center justify-between animate-in slide-in-from-top-3 duration-300">
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-emerald-700 font-black shrink-0 shadow-sm">
+                <Car size={18} />
+              </div>
+              <div className="text-left">
+                <h4 className="text-xs font-black uppercase tracking-wider">Motorista chegou ao local!</h4>
+                <p className="text-[11px] text-emerald-100 font-medium">Aguardando você no ponto de embarque.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => dismissArrivalNotification()}
+              className="p-1.5 rounded-lg hover:bg-emerald-700 text-white font-bold ml-2 transition text-xs"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Notificação Flutuante / Toast de GPS em Tempo Real */}
         {gpsToastMsg && (
@@ -1653,6 +1678,35 @@ export default function HomePage() {
           </>
         )}
       </div>
+
+      {/* Modal de Alerta de Cancelamento Imediato pelo Motorista */}
+      {cancellationNotification && (
+        <div className="fixed inset-0 z-[1500] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-dark-900 p-6 shadow-2xl border border-red-500/40 text-center space-y-4">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-500/15 text-red-600 dark:text-red-400">
+              <AlertCircle size={32} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-slate-900 dark:text-white">Corrida Cancelada</h3>
+              <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {cancellationNotification}
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="md"
+              full
+              onClick={() => {
+                dismissCancellationNotification();
+                setActiveStep('MAP');
+              }}
+              className="py-3 font-black bg-brand text-dark-950 hover:bg-brand-dark"
+            >
+              OK, Entendido
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Modal de Sucesso de Agendamento */}
       {scheduledSuccessTrip && (

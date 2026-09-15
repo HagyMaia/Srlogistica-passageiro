@@ -3,7 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
-import type { DriverInfo, LocationCoordinates } from '@/types';
+import type { DriverInfo } from '@/types';
 
 // Função utilitária para aproximar o motorista suavemente em direção ao destino ou passageiro
 function moveTowards(
@@ -52,7 +52,7 @@ export function useRideStatus() {
         if (mData) {
           driverData = mData;
         } else {
-          // Fallback para profiles ou drivers
+          // Fallback para profiles
           const { data: pData } = await supabase
             .from('profiles')
             .select('*')
@@ -71,6 +71,8 @@ export function useRideStatus() {
             ? driverData.latitude
             : typeof driverData.lat === 'number'
             ? driverData.lat
+            : typeof driverData.current_lat === 'number'
+            ? driverData.current_lat
             : currentTrip?.origin
             ? currentTrip.origin.latitude + 0.0055
             : -3.087;
@@ -80,6 +82,8 @@ export function useRideStatus() {
             ? driverData.longitude
             : typeof driverData.lng === 'number'
             ? driverData.lng
+            : typeof driverData.current_lng === 'number'
+            ? driverData.current_lng
             : currentTrip?.origin
             ? currentTrip.origin.longitude + 0.0045
             : -60.005;
@@ -114,21 +118,69 @@ export function useRideStatus() {
     const processStatusUpdate = async (newStatus: string, driverId?: string) => {
       if (!newStatus) return;
 
-      if (driverId) {
+      if (driverId && (!currentTrip?.driver || currentTrip.driver.id !== driverId)) {
         await fetchRealDriver(driverId);
       }
 
       const s = String(newStatus).trim().toUpperCase();
 
+      // Cancelamento Imediato pelo Motorista
+      if (
+        s === 'CANCELLED' ||
+        s === 'CANCELED' ||
+        s === 'CANCELADA' ||
+        s === 'CANCELADO' ||
+        s === 'REJECTED' ||
+        s === 'REJEITADA' ||
+        s === 'RECUSADA'
+      ) {
+        changeStatus('CANCELLED');
+        return;
+      }
+
+      // Motorista Chegou ao Local
+      if (
+        s === 'ARRIVED' ||
+        s === 'DRIVER_ARRIVED' ||
+        s === 'CHEGOU' ||
+        s === 'NO_LOCAL' ||
+        s === 'CHEGUEI' ||
+        s === 'CHEGUEI_AO_LOCAL' ||
+        s === 'AT_PICKUP'
+      ) {
+        changeStatus('DRIVER_ARRIVED');
+        return;
+      }
+
+      // Início da Corrida / Em Viagem
+      if (
+        s === 'IN_PROGRESS' ||
+        s === 'STARTED' ||
+        s === 'EM_ANDAMENTO' ||
+        s === 'EM_VIAGEM' ||
+        s === 'INICIADA' ||
+        s === 'ON_TRIP' ||
+        s === 'IN_TRANSIT' ||
+        s === 'EM_ROTA' ||
+        s === 'PICKED_UP'
+      ) {
+        changeStatus('IN_PROGRESS');
+        return;
+      }
+
+      // Motorista Aceitou / A Caminho
       if (s === 'ACCEPTED' || s === 'DRIVER_ASSIGNED' || s === 'ACEITA' || s === 'ACEITO') {
         changeStatus('DRIVER_ASSIGNED');
-      } else if (s === 'ARRIVING' || s === 'DRIVER_ARRIVING' || s === 'A_CAMINHO' || s === 'DESLOCANDO') {
+        return;
+      }
+
+      if (s === 'ARRIVING' || s === 'DRIVER_ARRIVING' || s === 'A_CAMINHO' || s === 'DESLOCANDO') {
         changeStatus('DRIVER_ARRIVING');
-      } else if (s === 'ARRIVED' || s === 'DRIVER_ARRIVED' || s === 'CHEGOU' || s === 'NO_LOCAL') {
-        changeStatus('DRIVER_ARRIVED');
-      } else if (s === 'IN_PROGRESS' || s === 'STARTED' || s === 'EM_ANDAMENTO' || s === 'EM_VIAGEM' || s === 'INICIADA') {
-        changeStatus('IN_PROGRESS');
-      } else if (
+        return;
+      }
+
+      // Viagem Concluída
+      if (
         s === 'COMPLETED' ||
         s === 'FINISHED' ||
         s === 'FINALIZADA' ||
@@ -139,8 +191,6 @@ export function useRideStatus() {
         s === 'PAID'
       ) {
         changeStatus('COMPLETED');
-      } else if (s === 'CANCELLED' || s === 'CANCELED' || s === 'CANCELADA' || s === 'CANCELADO') {
-        changeStatus('CANCELLED');
       }
     };
 
@@ -162,7 +212,7 @@ export function useRideStatus() {
 
     // 1. Escuta Realtime de Atualizações de Status da Corrida na tabela 'rides'
     const ridesChannel = supabase
-      .channel(`passenger-ride-${tripId}`)
+      .channel(`passenger-ride-db-${tripId}`)
       .on(
         'postgres_changes',
         {
@@ -177,24 +227,42 @@ export function useRideStatus() {
       )
       .subscribe();
 
-    // 2. Escuta fallback na tabela 'trips'
-    const tripsChannel = supabase
-      .channel(`passenger-trip-${tripId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'trips',
-          filter: `id=eq.${tripId}`
-        },
-        async (payload: any) => {
-          await processStatusUpdate(payload.new?.status, payload.new?.driver_id);
+    // 2. Escuta Broadcast em tempo real para Chat, Status e Cancelamento
+    const broadcastChannel = supabase
+      .channel(`passenger-ride-${tripId}`)
+      .on('broadcast', { event: 'chat_message' }, (payload: any) => {
+        const msg = payload.payload || payload;
+        if (msg && (msg.sender === 'driver' || msg.sender_type === 'driver')) {
+          addDriverMessage(msg.text || msg.content || '');
         }
-      )
+      })
+      .on('broadcast', { event: 'driver_message' }, (payload: any) => {
+        const msg = payload.payload || payload;
+        if (msg) {
+          addDriverMessage(msg.text || msg.content || '');
+        }
+      })
+      .on('broadcast', { event: 'status_update' }, async (payload: any) => {
+        const data = payload.payload || payload;
+        if (data?.status) {
+          await processStatusUpdate(data.status, data.driver_id);
+        }
+      })
+      .on('broadcast', { event: 'ride_cancelled' }, () => {
+        changeStatus('CANCELLED');
+      })
+      .on('broadcast', { event: 'driver_arrived' }, () => {
+        changeStatus('DRIVER_ARRIVED');
+      })
+      .on('broadcast', { event: 'driver_location' }, (payload: any) => {
+        const data = payload.payload || payload;
+        if (data && typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+          updateDriverLocation({ latitude: data.latitude, longitude: data.longitude });
+        }
+      })
       .subscribe();
 
-    // 3. Polling de alta confiabilidade (a cada 2 segundos) para garantir sincronia imediata
+    // 3. Polling de alta confiabilidade (a cada 1.5 segundos) para garantir sincronia instantânea
     const pollInterval = setInterval(async () => {
       try {
         const { data: rideRow } = await supabase
@@ -206,30 +274,28 @@ export function useRideStatus() {
         if (rideRow) {
           await processStatusUpdate(rideRow.status, rideRow.driver_id);
         }
-      } catch (_) {}
-    }, 2000);
 
-    // 4. Escuta Mensagens em Tempo Real da Corrida
-    const msgChannel = supabase
-      .channel(`trip-messages-${tripId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'trip_messages',
-          filter: `trip_id=eq.${tripId}`
-        },
-        (payload: any) => {
-          const newMsg = payload.new;
-          if (newMsg && (newMsg.sender_type === 'driver' || newMsg.sender === 'driver')) {
-            addDriverMessage(newMsg.content || newMsg.text || 'Nova mensagem do motorista');
+        // Se houver um motorista atribuído, sincroniza coordenadas reais do motorista se disponíveis
+        const driverId = rideRow?.driver_id || currentTrip?.driver?.id;
+        if (driverId) {
+          const { data: dRow } = await supabase
+            .from('motoristas')
+            .select('latitude, longitude, lat, lng')
+            .eq('id', driverId)
+            .maybeSingle();
+
+          if (dRow) {
+            const lat = typeof dRow.latitude === 'number' ? dRow.latitude : dRow.lat;
+            const lng = typeof dRow.longitude === 'number' ? dRow.longitude : dRow.lng;
+            if (typeof lat === 'number' && typeof lng === 'number' && Math.abs(lat) > 0.001) {
+              updateDriverLocation({ latitude: lat, longitude: lng });
+            }
           }
         }
-      )
-      .subscribe();
+      } catch (_) {}
+    }, 1500);
 
-    // 5. Transmissão Contínua e Movimentação em Tempo Real do Motorista no Mapa
+    // 4. Transmissão Contínua e Movimentação Suave do Motorista no Mapa
     const locationInterval = setInterval(() => {
       const liveTrip = usePassengerTripStore.getState().currentTrip;
       if (!liveTrip || !liveTrip.driver || !liveTrip.driver.current_location) return;
@@ -248,7 +314,7 @@ export function useRideStatus() {
           longitude: nextLoc.longitude
         });
 
-        // Se chegou bem perto (< 30 metros), avança para DRIVER_ARRIVED
+        // Se chegou no ponto de embarque (< 30 metros), avança para DRIVER_ARRIVED
         const dist = Math.hypot(target.latitude - nextLoc.latitude, target.longitude - nextLoc.longitude);
         if (dist < 0.00035 && tripStatus === 'DRIVER_ASSIGNED') {
           changeStatus('DRIVER_ARRIVING');
@@ -256,7 +322,7 @@ export function useRideStatus() {
           changeStatus('DRIVER_ARRIVED');
         }
       } else if (tripStatus === 'IN_PROGRESS') {
-        // Se a viagem está em andamento, desloca ao longo da rota até o destino
+        // Se a viagem está em andamento, desloca suavemente em direção ao destino final
         const routeCoords = liveTrip.routeCoordinates || [];
         if (routeCoords.length > 0) {
           const idx = routeIndexRef.current;
@@ -279,8 +345,7 @@ export function useRideStatus() {
       clearInterval(pollInterval);
       clearInterval(locationInterval);
       supabase.removeChannel(ridesChannel);
-      supabase.removeChannel(tripsChannel);
-      supabase.removeChannel(msgChannel);
+      supabase.removeChannel(broadcastChannel);
     };
   }, [tripId, status, changeStatus, setDriver, updateDriverLocation, addDriverMessage]);
 

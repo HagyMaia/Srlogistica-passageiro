@@ -55,6 +55,7 @@ export interface PassengerTrip {
   isScheduled?: boolean;
   scheduledFor?: string; // Data e hora ISO ou formato legível do agendamento
   scheduledNotes?: string; // Observações como voo, malas, etc.
+  notes?: string;
   driverAssignedAt?: string;
   driverArrivedAt?: string;
   startedAt?: string;
