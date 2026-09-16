@@ -614,11 +614,11 @@ export default function HomePage() {
     });
     return rawCategories.map((cat) => ({
       ...cat,
-      isVoucherEligible: cat.id !== 'ENTREGA' || selectedPaymentMethod === 'VOUCHER',
+      isVoucherEligible: true,
       calculatedFare: cat.price,
       estimatedArrivalMinutes: cat.etaMinutes
     }));
-  }, [selectedPaymentMethod, estimatedDistanceMeters, estimatedDurationSeconds]);
+  }, [estimatedDistanceMeters, estimatedDurationSeconds]);
 
   // Tarifa dinâmica da categoria atualmente selecionada
   const activeCategoryFare = useMemo(() => {
@@ -721,8 +721,6 @@ export default function HomePage() {
         return 'SR Confort';
       case 'EXECUTIVO':
         return 'SR Executivo';
-      case 'ENTREGA':
-        return 'SR Entrega';
       default:
         return 'SR Pop';
     }

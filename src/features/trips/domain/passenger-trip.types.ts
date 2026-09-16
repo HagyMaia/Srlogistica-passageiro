@@ -1,6 +1,6 @@
 import { LocationCoordinates, DriverInfo, PaymentMethod } from '@/types';
 
-export type TripCategory = 'POPULAR' | 'CONFORT' | 'EXECUTIVO' | 'ENTREGA';
+export type TripCategory = 'POPULAR' | 'CONFORT' | 'EXECUTIVO';
 
 export type PassengerTripStatus =
   | 'IDLE'                  // Passageiro no mapa

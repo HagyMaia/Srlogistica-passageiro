@@ -41,16 +41,6 @@ export const CATEGORY_RATES: Record<TripCategory, CategoryRate> = {
     description: 'Sedãs de alto padrão, climatizados e máxima discrição',
     capacity: '4 pessoas',
     icon: 'sparkles'
-  },
-  ENTREGA: {
-    baseFare: 6.00,
-    perKm: 1.80,
-    perMinute: 0.30,
-    minFare: 10.00,
-    name: 'SR Entrega',
-    description: 'Envio rápido de pequenos pacotes e encomendas',
-    capacity: 'Até 15kg',
-    icon: 'package'
   }
 };
 
@@ -96,7 +86,7 @@ export function getAvailableCategories({
   durationSeconds: number;
   surgeMultiplier?: number;
 }): CategoryOption[] {
-  const categories: TripCategory[] = ['POPULAR', 'CONFORT', 'EXECUTIVO', 'ENTREGA'];
+  const categories: TripCategory[] = ['POPULAR', 'CONFORT', 'EXECUTIVO'];
 
   return categories.map((catKey) => {
     const rate = CATEGORY_RATES[catKey];

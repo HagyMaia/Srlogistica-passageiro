@@ -13,13 +13,11 @@ interface ScheduledSuccessModalProps {
 
 export function ScheduledSuccessModal({ trip, onClose }: ScheduledSuccessModalProps) {
   const categoryName =
-    trip.category === 'POPULAR'
-      ? 'SR Pop'
-      : trip.category === 'CONFORT'
+    trip.category === 'CONFORT'
       ? 'SR Confort'
       : trip.category === 'EXECUTIVO'
       ? 'SR Executivo'
-      : 'SR Entrega';
+      : 'SR Pop';
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-end sm:items-center justify-center bg-dark-950/80 backdrop-blur-md p-4 animate-fadeIn">
