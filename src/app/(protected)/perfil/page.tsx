@@ -79,7 +79,7 @@ const EXECUTIVE_AVATARS = [
 ];
 
 export default function PerfilPage() {
-  const { profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, signOut } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(profile?.name || '');
@@ -211,9 +211,9 @@ export default function PerfilPage() {
     setBioMsg(null);
     try {
       const userObj = {
-        id: profile?.id || 'passenger-user',
-        email: profile?.email || 'passageiro@srlogistica.com.br',
-        name: name || profile?.name || 'Passageiro SR'
+        id: profile?.id || user?.id || '',
+        email: profile?.email || user?.email || '',
+        name: name || profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro'
       };
       await enrollBiometrics(userObj);
       setBioEnrolled(true);

@@ -15,14 +15,14 @@ interface AuthContextType {
 }
 
 const DEFAULT_PROFILE: PassengerProfile = {
-  id: 'passenger-active-user',
-  name: 'Passageiro SR',
-  email: 'passageiro@srlogistica.com.br',
-  phone: '(92) 99123-4567',
+  id: '',
+  name: 'Passageiro',
+  email: '',
+  phone: '',
   role: 'passenger',
   avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-  rating: 4.98,
-  total_rides: 12,
+  rating: 5.0,
+  total_rides: 0,
   payment_preference: 'PIX',
   status: 'active',
   is_approved: true,
@@ -216,7 +216,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (typeof window !== 'undefined') {
               try {
                 const raw = localStorage.getItem('sr_passenger_active_session');
-                if (raw) savedLocalSession = JSON.parse(raw);
+                if (raw) {
+                  savedLocalSession = JSON.parse(raw);
+                  if (
+                    savedLocalSession?.user?.id === 'passenger-demo-user' ||
+                    savedLocalSession?.user?.id === 'passenger-active-user' ||
+                    savedLocalSession?.user?.email === 'passageiro@srlogistica.com.br' ||
+                    savedLocalSession?.profile?.name === 'Passageiro SR'
+                  ) {
+                    localStorage.removeItem('sr_passenger_active_session');
+                    savedLocalSession = null;
+                  }
+                }
               } catch (_) {}
             }
 
@@ -236,7 +247,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (typeof window !== 'undefined') {
             try {
               const raw = localStorage.getItem('sr_passenger_active_session');
-              if (raw) savedLocalSession = JSON.parse(raw);
+              if (raw) {
+                savedLocalSession = JSON.parse(raw);
+                if (
+                  savedLocalSession?.user?.id === 'passenger-demo-user' ||
+                  savedLocalSession?.user?.id === 'passenger-active-user' ||
+                  savedLocalSession?.user?.email === 'passageiro@srlogistica.com.br' ||
+                  savedLocalSession?.profile?.name === 'Passageiro SR'
+                ) {
+                  localStorage.removeItem('sr_passenger_active_session');
+                  savedLocalSession = null;
+                }
+              }
             } catch (_) {}
           }
 
@@ -265,7 +287,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (typeof window !== 'undefined') {
           try {
             const raw = localStorage.getItem('sr_passenger_active_session');
-            if (raw) savedLocalSession = JSON.parse(raw);
+            if (raw) {
+              savedLocalSession = JSON.parse(raw);
+              if (
+                savedLocalSession?.user?.id === 'passenger-demo-user' ||
+                savedLocalSession?.user?.id === 'passenger-active-user' ||
+                savedLocalSession?.user?.email === 'passageiro@srlogistica.com.br' ||
+                savedLocalSession?.profile?.name === 'Passageiro SR'
+              ) {
+                localStorage.removeItem('sr_passenger_active_session');
+                savedLocalSession = null;
+              }
+            }
           } catch (_) {}
         }
 
@@ -302,46 +335,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const loginAsGuest = async (custom?: Partial<PassengerProfile>) => {
-    const guestId = custom?.id || 'passenger-demo-user';
-    const guestUser = {
-      id: guestId,
-      email: custom?.email || 'passageiro@srlogistica.com.br',
-      user_metadata: {
-        name: custom?.name || 'Passageiro SR',
-        nome: custom?.name || 'Passageiro SR',
-        phone: custom?.phone || '(92) 99123-4567',
-        company: custom?.company || 'SR Logística & Transporte',
-        department: custom?.department || 'Operações e Gestão',
-        is_approved: true,
-        status: 'active',
-        role: 'passenger'
-      }
-    };
-
-    const guestProf: PassengerProfile = {
-      id: guestId,
-      name: custom?.name || 'Passageiro SR',
-      email: custom?.email || 'passageiro@srlogistica.com.br',
-      phone: custom?.phone || '(92) 99123-4567',
-      role: 'passenger',
-      avatar_url: custom?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
-      rating: 4.98,
-      total_rides: 12,
-      payment_preference: 'PIX',
-      status: 'active',
-      is_approved: true,
-      created_at: new Date().toISOString()
-    };
-
+  const loginAsGuest = async (_custom?: Partial<PassengerProfile>) => {
+    // Opção de entrar direto como convidado mock desativada - o app requer autenticação real
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('sr_passenger_active_session', JSON.stringify({ user: guestUser, profile: guestProf }));
+        localStorage.removeItem('sr_passenger_active_session');
       } catch (_) {}
     }
-
-    setUser(guestUser);
-    setProfile(guestProf);
+    setUser(null);
+    setProfile(null);
     setLoading(false);
   };
 

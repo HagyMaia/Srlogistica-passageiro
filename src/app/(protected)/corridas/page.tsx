@@ -310,9 +310,9 @@ export default function CorridasPage() {
   const handleExportPDF = () => {
     if (typeof window === 'undefined') return;
 
-    const passengerName = profile?.name || user?.email?.split('@')[0] || 'Passageiro SR';
+    const passengerName = profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro';
     const passengerEmail = profile?.email || user?.email || 'N/A';
-    const passengerPhone = profile?.phone || '(92) 99123-4567';
+    const passengerPhone = profile?.phone || user?.user_metadata?.phone || '';
     const passengerCompany = profile?.corporate_company || (profile as any)?.company || 'Passageiro Individual / Voucher';
     const periodLabel = getPeriodLabel();
     const emissionDate = formatDateTime(new Date().toISOString());

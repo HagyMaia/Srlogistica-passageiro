@@ -32,7 +32,6 @@ import {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loginAsGuest } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -69,34 +68,18 @@ export default function LoginPage() {
       if (isEnrolled && biometricUser) {
         // Usuário já cadastrado no aparelho: valida a biometria nativa
         const authenticatedUser = await authenticateWithBiometrics();
-        await loginAsGuest({
-          id: authenticatedUser.id,
-          email: authenticatedUser.email,
-          name: authenticatedUser.name || 'Passageiro SR'
-        });
+        if (authenticatedUser?.email) {
+          setEmail(authenticatedUser.email);
+        }
         window.location.href = '/';
       } else {
-        // Primeira vez com biometria: se já tiver e-mail preenchido, cadastra no aparelho
-        const targetEmail = email || 'passageiro@srlogistica.com.br';
-        await enrollBiometrics({
-          id: `passenger-${Date.now()}`,
-          email: targetEmail,
-          name: targetEmail.split('@')[0]
-        });
-        await loginAsGuest({ email: targetEmail });
-        window.location.href = '/';
+        setErrorMsg('Para habilitar a biometria no aparelho, faça login com seu e-mail e senha cadastrados.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Não foi possível validar a biometria.');
     } finally {
       setBiometricLoading(false);
     }
-  };
-
-  const handleQuickLogin = async () => {
-    setLoading(true);
-    await loginAsGuest();
-    window.location.href = '/';
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -358,17 +341,6 @@ export default function LoginPage() {
           <Button type="submit" size="xl" full disabled={loading || biometricLoading} className="mt-2">
             {loading ? 'Entrando...' : 'Entrar com Senha'} <ArrowRight size={18} />
           </Button>
-
-          {/* Botão de Acesso Rápido Direto */}
-          <button
-            type="button"
-            onClick={handleQuickLogin}
-            disabled={loading || biometricLoading}
-            className="flex w-full items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-900 dark:text-amber-300 font-black text-xs shadow-sm transition active:scale-[0.98]"
-          >
-            <Zap size={14} className="text-amber-500 fill-amber-500" />
-            <span>⚡ Acesso Rápido Executivo</span>
-          </button>
         </form>
       </div>
 

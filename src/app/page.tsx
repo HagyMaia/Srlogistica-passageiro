@@ -138,7 +138,7 @@ const FAVORITE_DESTINATIONS = [
 ];
 
 export default function HomePage() {
-  const { user, profile, loading: authLoading, loginAsGuest } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const router = useRouter();
   const {
     location,
@@ -222,12 +222,12 @@ export default function HomePage() {
 
   const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
 
-  // Garante que o passageiro consiga navegar e solicitar corridas sem ser expulso
+  // Redireciona para tela de boas-vindas se não autenticado
   useEffect(() => {
     if (!authLoading && !user) {
-      loginAsGuest();
+      router.push('/welcome');
     }
-  }, [user, authLoading, loginAsGuest]);
+  }, [user, authLoading, router]);
 
   // Carrega agendamentos
   useEffect(() => {
@@ -696,9 +696,9 @@ export default function HomePage() {
     }
 
     const passengerData = {
-      id: profile?.id || user?.id || 'demo-passenger',
-      name: profile?.name || 'Passageiro SR',
-      phone: profile?.phone || '(92) 99123-4567'
+      id: profile?.id || user?.id || 'passageiro',
+      name: profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro',
+      phone: profile?.phone || user?.user_metadata?.phone || ''
     };
 
     if (rideMode === 'SCHEDULE') {
@@ -810,7 +810,7 @@ export default function HomePage() {
             <div className="flex flex-col">
               <div className="flex items-center gap-1">
                 <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
-                  {profile?.name || 'Passageiro SR'}
+                  {profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro'}
                 </span>
                 {(profile?.payment_preference === 'VOUCHER' || Boolean(profile?.corporate_company || profile?.company)) && (
                   <Badge className="bg-brand/20 text-brand-800 dark:text-brand border-brand/40 text-[9px] py-0 px-1">

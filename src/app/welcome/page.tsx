@@ -15,10 +15,8 @@ import { useAuth } from '@/lib/auth';
 
 export default function WelcomePage() {
   const router = useRouter();
-  const { loginAsGuest } = useAuth();
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [isInstallModalOpen, setIsInstallModalOpen] = useState(false);
-  const [isLoggingInQuick, setIsLoggingInQuick] = useState(false);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -31,12 +29,6 @@ export default function WelcomePage() {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
     };
   }, []);
-
-  const handleQuickEnter = async () => {
-    setIsLoggingInQuick(true);
-    await loginAsGuest();
-    router.push('/');
-  };
 
   const handleInstallApp = async () => {
     if (deferredPrompt) {
@@ -111,17 +103,6 @@ export default function WelcomePage() {
             <ArrowRight size={18} />
           </Button>
         </Link>
-
-        {/* Botão de Entrada Rápida Direta no App */}
-        <button
-          type="button"
-          onClick={handleQuickEnter}
-          disabled={isLoggingInQuick}
-          className="flex w-full items-center justify-center gap-2 h-11 px-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white hover:text-brand font-black text-xs shadow-lg backdrop-blur-md transition active:scale-[0.98]"
-        >
-          <Zap size={14} className="text-amber-400 fill-amber-400" />
-          <span>{isLoggingInQuick ? 'Iniciando Sessão...' : '⚡ Entrar Direto no Aplicativo'}</span>
-        </button>
 
         {/* Botão de Destaque: Instalar Aplicativo */}
         <button
