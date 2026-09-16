@@ -13,7 +13,11 @@ import {
   XCircle,
   Clock,
   MessageCircle,
-  ArrowRight
+  ArrowRight,
+  Eye,
+  EyeOff,
+  ChevronDown,
+  Map
 } from 'lucide-react';
 import { Button, Badge } from '@/components/ui';
 import { formatCurrency, formatDistance, formatDuration } from '@/lib/utils';
@@ -28,13 +32,15 @@ interface PassengerActiveRideSheetProps {
   onCancel: () => void;
   onSendMessage?: (msg: string) => void;
   onShowRoute?: () => void;
+  onToggleCollapse?: () => void;
 }
 
 export function PassengerActiveRideSheet({
   trip,
   onCancel,
   onSendMessage,
-  onShowRoute
+  onShowRoute,
+  onToggleCollapse
 }: PassengerActiveRideSheetProps) {
   const [showChatModal, setShowChatModal] = useState(false);
   const [showSafetyModal, setShowSafetyModal] = useState(false);
@@ -84,7 +90,37 @@ export function PassengerActiveRideSheet({
   return (
     <>
       <div className="w-full rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white/95 dark:bg-dark-900/95 backdrop-blur-xl p-4 shadow-2xl space-y-3.5">
-        {/* Status Banner Interativo com Foco no Trajeto */}
+        {/* Barra Superior com Controles de Exibir/Ocultar e Visualizar Trajeto */}
+        <div className="flex items-center justify-between pb-0.5">
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-2.5 py-1 rounded-xl bg-slate-100 dark:bg-dark-800 transition active:scale-95"
+            title="Ocultar informações da corrida para ver o mapa"
+          >
+            <EyeOff size={13} className="text-slate-500 dark:text-slate-400" />
+            <span>Ocultar / Ver Mapa</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            className="h-1.5 w-10 rounded-full bg-slate-300 dark:bg-dark-700 hover:bg-slate-400 transition cursor-pointer"
+            title="Minimizar / Expandir Painel"
+          />
+
+          <button
+            type="button"
+            onClick={() => onShowRoute?.()}
+            className="flex items-center gap-1 text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 px-2.5 py-1 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 transition active:scale-95"
+            title="Focar e ver o trajeto no mapa"
+          >
+            <Map size={12} />
+            <span>Ver Trajeto</span>
+          </button>
+        </div>
+
+        {/* Status Banner Interativo com Botão EM ROTA Clicável */}
         <div
           onClick={() => onShowRoute?.()}
           className={`flex items-center justify-between rounded-2xl border p-3 cursor-pointer transition-all active:scale-[0.99] group shadow-sm ${statusInfo.color}`}
@@ -106,10 +142,11 @@ export function PassengerActiveRideSheet({
               e.stopPropagation();
               onShowRoute?.();
             }}
-            className="text-[11px] font-black uppercase px-2.5 py-1 rounded-xl border border-current bg-white/40 dark:bg-dark-900/40 hover:bg-white/80 dark:hover:bg-dark-900/80 active:scale-95 transition flex items-center gap-1 shadow-sm"
+            className="text-xs font-black uppercase px-3 py-1.5 rounded-xl border-2 border-current bg-white/70 dark:bg-dark-900/70 hover:bg-white dark:hover:bg-dark-900 active:scale-95 transition flex items-center gap-1.5 shadow-sm"
+            title="Focar trajeto no mapa"
           >
             <span>{statusInfo.badge}</span>
-            <Navigation size={12} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
+            <Navigation size={13} className="group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform" />
           </button>
         </div>
 

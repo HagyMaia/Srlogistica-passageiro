@@ -509,6 +509,7 @@ export default function HomePage() {
       } catch (_) {}
     }
 
+    setIsPanelCollapsed(true);
     setGpsToastMsg('🗺️ Visualizando o trajeto completo no mapa');
     setTimeout(() => setGpsToastMsg(null), 2500);
   }, [currentTrip, origin, destination, location, estimatedFare, setRouteInfo]);
@@ -904,25 +905,88 @@ export default function HomePage() {
       <div className="mt-auto z-20 w-full max-w-lg mx-auto p-3">
         {isPanelCollapsed ? (
           <div className="w-full pb-2 animate-in fade-in slide-in-from-bottom-2">
-            <button
-              onClick={() => setIsPanelCollapsed(false)}
-              className="w-full flex items-center justify-between rounded-2xl bg-white/95 dark:bg-dark-900/95 p-3.5 shadow-2xl border border-brand/50 backdrop-blur-xl transition hover:scale-[1.01] active:scale-95"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <span className="flex h-3 w-3 rounded-full bg-brand animate-ping shrink-0" />
-                <span className="text-xs font-black text-slate-900 dark:text-white truncate">
-                  {currentTrip && currentTrip.status === 'SEARCHING_DRIVER'
-                    ? 'Procurando motorista... (Toque para abrir)'
-                    : destination
-                    ? 'Corrida configurada (Toque para abrir painel)'
-                    : '📍 Para onde vamos? (Toque para abrir painel)'}
-                </span>
+            {currentTrip &&
+            (currentTrip.status === 'DRIVER_ASSIGNED' ||
+              currentTrip.status === 'DRIVER_ARRIVING' ||
+              currentTrip.status === 'DRIVER_ARRIVED' ||
+              currentTrip.status === 'IN_PROGRESS') ? (
+              <div className="w-full flex items-center justify-between gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-3 shadow-2xl border border-blue-500/40 backdrop-blur-xl">
+                <div
+                  onClick={() => setIsPanelCollapsed(false)}
+                  className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                  title="Clique para abrir detalhes da corrida"
+                >
+                  <div className="relative shrink-0">
+                    {currentTrip.driver?.avatar_url ? (
+                      <img
+                        src={currentTrip.driver.avatar_url}
+                        alt={currentTrip.driver.name}
+                        className="h-10 w-10 rounded-full object-cover border-2 border-brand shadow-sm"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-sm">
+                        {currentTrip.driver?.name?.charAt(0) || 'M'}
+                      </div>
+                    )}
+                    <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 rounded-full bg-blue-500 ring-2 ring-white animate-pulse" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                        {currentTrip.driver?.name || 'Motorista'}
+                      </span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                        {currentTrip.status === 'IN_PROGRESS' ? 'Em Rota' : 'A Caminho'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                      {currentTrip.driver?.vehicle.brand} {currentTrip.driver?.vehicle.model} • <span className="font-mono font-bold text-slate-700 dark:text-slate-300">{currentTrip.driver?.vehicle.plate}</span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleShowRoute}
+                    className="flex items-center gap-1 text-[11px] font-black px-2.5 py-2 rounded-xl bg-blue-600 text-white shadow-md active:scale-95 transition"
+                    title="Focar e ver trajeto no mapa"
+                  >
+                    <Navigation size={13} />
+                    <span>Ver Rota</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsPanelCollapsed(false)}
+                    className="flex items-center gap-1 text-[11px] font-black px-2.5 py-2 rounded-xl bg-slate-100 dark:bg-dark-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-dark-700 active:scale-95 transition"
+                    title="Abrir painel completo"
+                  >
+                    <Eye size={13} />
+                    <span>Exibir</span>
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 text-xs font-black text-brand-700 dark:text-brand shrink-0 ml-2">
-                <Eye size={16} />
-                <span>Exibir Painel</span>
-              </div>
-            </button>
+            ) : (
+              <button
+                onClick={() => setIsPanelCollapsed(false)}
+                className="w-full flex items-center justify-between rounded-2xl bg-white/95 dark:bg-dark-900/95 p-3.5 shadow-2xl border border-brand/50 backdrop-blur-xl transition hover:scale-[1.01] active:scale-95"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="flex h-3 w-3 rounded-full bg-brand animate-ping shrink-0" />
+                  <span className="text-xs font-black text-slate-900 dark:text-white truncate">
+                    {currentTrip && currentTrip.status === 'SEARCHING_DRIVER'
+                      ? 'Procurando motorista... (Toque para abrir)'
+                      : destination
+                      ? 'Corrida configurada (Toque para abrir painel)'
+                      : '📍 Para onde vamos? (Toque para abrir painel)'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-black text-brand-700 dark:text-brand shrink-0 ml-2">
+                  <Eye size={16} />
+                  <span>Exibir Painel</span>
+                </div>
+              </button>
+            )}
           </div>
         ) : (
           <>
@@ -941,6 +1005,7 @@ export default function HomePage() {
                   trip={currentTrip}
                   onCancel={handleCancelAndReset}
                   onShowRoute={handleShowRoute}
+                  onToggleCollapse={() => setIsPanelCollapsed(true)}
                 />
               )}
 

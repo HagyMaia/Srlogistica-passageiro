@@ -248,9 +248,10 @@ function MapController({
     if (routeCoordinates && routeCoordinates.length > 1) {
       const bounds = L.latLngBounds(routeCoordinates);
       map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: true });
-    } else if (origin && destination) {
+    } else if (destination && (driverLocation || origin)) {
+      const start = driverLocation || origin!;
       const bounds = L.latLngBounds([
-        [origin.latitude, origin.longitude],
+        [start.latitude, start.longitude],
         [destination.latitude, destination.longitude]
       ]);
       map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
