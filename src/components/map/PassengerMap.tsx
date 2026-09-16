@@ -233,18 +233,58 @@ function MapController({
   origin,
   destination,
   routeCoordinates,
+  pickupRouteCoordinates,
+  tripStatus,
   driverLocation,
   focusRouteTrigger
 }: {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
+  pickupRouteCoordinates?: Array<[number, number]>;
+  tripStatus?: string;
   driverLocation?: LocationCoordinates | null;
   focusRouteTrigger?: number;
 }) {
   const map = useMap();
 
   useEffect(() => {
+    // 1. Fase de Aproximação (Motorista a caminho do Embarque)
+    if (tripStatus === 'DRIVER_ASSIGNED' || tripStatus === 'DRIVER_ARRIVING') {
+      if (pickupRouteCoordinates && pickupRouteCoordinates.length > 1) {
+        const bounds = L.latLngBounds(pickupRouteCoordinates);
+        map.fitBounds(bounds, { padding: [70, 70], maxZoom: 16, animate: true });
+        return;
+      }
+      if (driverLocation && origin) {
+        const bounds = L.latLngBounds([
+          [driverLocation.latitude, driverLocation.longitude],
+          [origin.latitude, origin.longitude]
+        ]);
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
+        return;
+      }
+    }
+
+    // 2. Fase de Viagem em Andamento (Embarque / Motorista até o Destino)
+    if (tripStatus === 'IN_PROGRESS') {
+      if (routeCoordinates && routeCoordinates.length > 1) {
+        const bounds = L.latLngBounds(routeCoordinates);
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: true });
+        return;
+      }
+      if (destination && (driverLocation || origin)) {
+        const start = driverLocation || origin!;
+        const bounds = L.latLngBounds([
+          [start.latitude, start.longitude],
+          [destination.latitude, destination.longitude]
+        ]);
+        map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
+        return;
+      }
+    }
+
+    // 3. Padrão / Configuração de Corrida
     if (routeCoordinates && routeCoordinates.length > 1) {
       const bounds = L.latLngBounds(routeCoordinates);
       map.fitBounds(bounds, { padding: [60, 60], maxZoom: 16, animate: true });
@@ -264,7 +304,7 @@ function MapController({
     } else if (origin) {
       map.panTo([origin.latitude, origin.longitude], { animate: true, duration: 0.8 });
     }
-  }, [origin, destination, routeCoordinates, driverLocation, focusRouteTrigger, map]);
+  }, [origin, destination, routeCoordinates, pickupRouteCoordinates, tripStatus, driverLocation, focusRouteTrigger, map]);
 
   return null;
 }
@@ -284,6 +324,8 @@ export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
+  pickupRouteCoordinates?: Array<[number, number]>;
+  tripStatus?: string;
   driver?: DriverInfo | null;
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
   accuracy?: number | null;
@@ -302,6 +344,8 @@ export default function PassengerMap({
   origin,
   destination,
   routeCoordinates = [],
+  pickupRouteCoordinates = [],
+  tripStatus,
   driver,
   nearbyDrivers = [],
   accuracy,
@@ -338,16 +382,22 @@ export default function PassengerMap({
   );
   const roamingCarIcon = useMemo(() => createCarIcon(false), []);
 
-  // Rota de aproximação do motorista até o ponto de embarque (quando motorista está a caminho)
-  const approachRoute: Array<[number, number]> = useMemo(() => {
-    if (driver?.current_location && origin && (!routeCoordinates || routeCoordinates.length === 0)) {
+  // Determina se o motorista está a caminho do ponto de embarque
+  const isApproaching = tripStatus === 'DRIVER_ASSIGNED' || tripStatus === 'DRIVER_ARRIVING';
+
+  // Rota de aproximação do motorista até o ponto de embarque
+  const effectivePickupRoute: Array<[number, number]> = useMemo(() => {
+    if (pickupRouteCoordinates && pickupRouteCoordinates.length > 1) {
+      return pickupRouteCoordinates;
+    }
+    if (driver?.current_location && origin && isApproaching) {
       return [
         [driver.current_location.latitude, driver.current_location.longitude],
         [origin.latitude, origin.longitude]
       ];
     }
     return [];
-  }, [driver?.current_location, origin, routeCoordinates]);
+  }, [pickupRouteCoordinates, driver?.current_location, origin, isApproaching]);
 
   return (
     <div className={`relative ${className}`}>
@@ -366,14 +416,30 @@ export default function PassengerMap({
           origin={origin}
           destination={destination}
           routeCoordinates={routeCoordinates}
+          pickupRouteCoordinates={pickupRouteCoordinates}
+          tripStatus={tripStatus}
           driverLocation={driver?.current_location}
           focusRouteTrigger={focusRouteTrigger}
         />
 
         <MapClickHandler onMapClick={onMapClick} />
 
-        {/* Linha da Rota Principal de Viagem */}
-        {routeCoordinates.length > 0 && (
+        {/* Linha de Aproximação do Motorista (A caminho do Ponto de Embarque) */}
+        {effectivePickupRoute.length > 1 && isApproaching && (
+          <>
+            <Polyline
+              positions={effectivePickupRoute}
+              pathOptions={{ color: '#0B1224', weight: 6, opacity: 0.85 }}
+            />
+            <Polyline
+              positions={effectivePickupRoute}
+              pathOptions={{ color: '#10B981', weight: 4, opacity: 1, dashArray: '8, 8' }}
+            />
+          </>
+        )}
+
+        {/* Linha da Rota Principal de Viagem (Até o Destino) */}
+        {routeCoordinates.length > 0 && !isApproaching && (
           <>
             <Polyline
               positions={routeCoordinates}
@@ -382,20 +448,6 @@ export default function PassengerMap({
             <Polyline
               positions={routeCoordinates}
               pathOptions={{ color: '#FFC800', weight: 4, opacity: 1 }}
-            />
-          </>
-        )}
-
-        {/* Linha de Aproximação do Motorista (A caminho do passageiro) */}
-        {approachRoute.length > 1 && (
-          <>
-            <Polyline
-              positions={approachRoute}
-              pathOptions={{ color: '#0B1224', weight: 5, opacity: 0.75, dashArray: '8, 8' }}
-            />
-            <Polyline
-              positions={approachRoute}
-              pathOptions={{ color: '#10B981', weight: 3, opacity: 1, dashArray: '6, 6' }}
             />
           </>
         )}

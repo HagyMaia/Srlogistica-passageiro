@@ -8,7 +8,7 @@ import type {
 } from '../domain/passenger-trip.types';
 import type { LocationCoordinates, PaymentMethod, DriverInfo } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { haversineDistance } from '@/services/routing';
+import { haversineDistance, calculateRoute } from '@/services/routing';
 import { calculateFare } from '../domain/pricing';
 
 const STORAGE_KEY = 'sr-passenger-active-trip';
@@ -24,6 +24,7 @@ interface PassengerTripStore {
   selectedCategory: TripCategory;
   selectedPaymentMethod: PaymentMethod;
   routeCoordinates: Array<[number, number]>;
+  pickupRouteCoordinates: Array<[number, number]>;
   estimatedDistanceMeters: number;
   estimatedDurationSeconds: number;
   estimatedFare: number;
@@ -48,6 +49,7 @@ interface PassengerTripStore {
     durationSeconds: number;
     estimatedFare: number;
   }) => void;
+  setPickupRouteCoordinates: (coords: Array<[number, number]>) => void;
   setCurrentTrip: (trip: PassengerTrip | null) => void;
   changeStatus: (nextStatus: PassengerTripStatus) => void;
   setDriver: (driver: DriverInfo) => void;
@@ -176,6 +178,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
   selectedCategory: 'POPULAR',
   selectedPaymentMethod: 'PIX',
   routeCoordinates: [],
+  pickupRouteCoordinates: initialSavedTrip?.pickupRouteCoordinates || [],
   estimatedDistanceMeters: 0,
   estimatedDurationSeconds: 0,
   estimatedFare: 0,
@@ -225,13 +228,26 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     });
   },
 
+  setPickupRouteCoordinates: (pickupRouteCoordinates) => {
+    const { currentTrip } = get();
+    if (currentTrip) {
+      const updated = { ...currentTrip, pickupRouteCoordinates };
+      persistTrip(updated);
+      set({ currentTrip: updated, pickupRouteCoordinates });
+    } else {
+      set({ pickupRouteCoordinates });
+    }
+  },
+
   setCurrentTrip: (trip) => {
     persistTrip(trip);
     const msgs = trip?.messages || [];
     set({
       currentTrip: trip,
       chatMessages: msgs,
-      unreadChatCount: msgs.filter((m) => !m.isRead && m.sender === 'driver').length
+      unreadChatCount: msgs.filter((m) => !m.isRead && m.sender === 'driver').length,
+      routeCoordinates: trip?.routeCoordinates || get().routeCoordinates,
+      pickupRouteCoordinates: trip?.pickupRouteCoordinates || get().pickupRouteCoordinates
     });
   },
 
@@ -264,6 +280,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
         currentTrip: null,
         destination: null,
         routeCoordinates: [],
+        pickupRouteCoordinates: [],
         estimatedDistanceMeters: 0,
         estimatedDurationSeconds: 0,
         estimatedFare: 0,
@@ -277,14 +294,51 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     }
 
     if (nextStatus === 'DRIVER_ARRIVED') {
+      const updatedWithClearPickup = { ...updated, pickupRouteCoordinates: [] };
+      persistTrip(updatedWithClearPickup);
       set({
-        currentTrip: updated,
+        currentTrip: updatedWithClearPickup,
+        pickupRouteCoordinates: [],
         chatMessages: updatedMessages,
         unreadChatCount: newUnread,
         arrivalNotification: 'Motorista chegou ao local de embarque!'
       });
-      persistTrip(updated);
+
+      // Garante que a rota até o destino final esteja calculada e pronta
+      if (updated.origin && updated.destination) {
+        calculateRoute(updated.origin, updated.destination)
+          .then((r) => {
+            if (r?.coordinates?.length) {
+              const latest = get().currentTrip;
+              if (latest && latest.id === updated.id) {
+                const withRoute = { ...latest, routeCoordinates: r.coordinates };
+                persistTrip(withRoute);
+                set({ currentTrip: withRoute, routeCoordinates: r.coordinates });
+              }
+            }
+          })
+          .catch(() => {});
+      }
       return;
+    }
+
+    if (nextStatus === 'IN_PROGRESS') {
+      // Viagem iniciada: limpa trajeto de embarque e carrega trajeto completo até o destino final
+      const startLoc = updated.driver?.current_location || updated.origin;
+      if (startLoc && updated.destination) {
+        calculateRoute(startLoc, updated.destination)
+          .then((r) => {
+            if (r?.coordinates?.length) {
+              const latest = get().currentTrip;
+              if (latest && latest.id === updated.id) {
+                const withRoute = { ...latest, routeCoordinates: r.coordinates, pickupRouteCoordinates: [] };
+                persistTrip(withRoute);
+                set({ currentTrip: withRoute, routeCoordinates: r.coordinates, pickupRouteCoordinates: [] });
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
 
     persistTrip(updated);
@@ -321,6 +375,22 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     persistTrip(updated);
     saveRideToHistory(updated);
     set({ currentTrip: updated, chatMessages: updatedMessages, unreadChatCount: newUnread });
+
+    // Calcula imediatamente o trajeto de aproximação: Motorista -> Ponto de Embarque
+    if (driver.current_location && currentTrip.origin) {
+      calculateRoute(driver.current_location, currentTrip.origin)
+        .then((route) => {
+          if (route?.coordinates?.length) {
+            const latest = get().currentTrip;
+            if (latest && latest.id === currentTrip.id) {
+              const withPickup = { ...latest, pickupRouteCoordinates: route.coordinates };
+              persistTrip(withPickup);
+              set({ currentTrip: withPickup, pickupRouteCoordinates: route.coordinates });
+            }
+          }
+        })
+        .catch(() => {});
+    }
   },
 
   updateDriverLocation: (loc) => {

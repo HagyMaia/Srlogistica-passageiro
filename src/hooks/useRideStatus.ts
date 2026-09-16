@@ -38,6 +38,7 @@ export function useRideStatus() {
   const tripId = currentTrip?.id;
   const status = currentTrip?.status;
   const routeIndexRef = useRef<number>(0);
+  const pickupRouteIndexRef = useRef<number>(0);
   const processedMessageIdsRef = useRef<Set<string>>(new Set<string>());
 
   useEffect(() => {
@@ -429,14 +430,24 @@ export function useRideStatus() {
         const target = liveTrip.origin;
         if (!target) return;
 
-        const nextLoc = moveTowards(currentLoc, target, 0.00015);
-        updateDriverLocation({
-          latitude: nextLoc.latitude,
-          longitude: nextLoc.longitude
-        });
+        const pickupCoords = liveTrip.pickupRouteCoordinates || [];
+        if (pickupCoords.length > 0) {
+          const pIdx = pickupRouteIndexRef.current;
+          if (pIdx < pickupCoords.length) {
+            const [pLat, pLng] = pickupCoords[pIdx];
+            updateDriverLocation({ latitude: pLat, longitude: pLng });
+            pickupRouteIndexRef.current = pIdx + 1;
+          }
+        } else {
+          const nextLoc = moveTowards(currentLoc, target, 0.00015);
+          updateDriverLocation({
+            latitude: nextLoc.latitude,
+            longitude: nextLoc.longitude
+          });
+        }
 
         // Se chegou no ponto de embarque (< 30 metros), avança para DRIVER_ARRIVED
-        const dist = Math.hypot(target.latitude - nextLoc.latitude, target.longitude - nextLoc.longitude);
+        const dist = Math.hypot(target.latitude - currentLoc.latitude, target.longitude - currentLoc.longitude);
         if (dist < 0.00035 && tripStatus === 'DRIVER_ASSIGNED') {
           changeStatus('DRIVER_ARRIVING');
         } else if (dist < 0.0002) {

@@ -169,6 +169,7 @@ export default function HomePage() {
     selectedCategory,
     selectedPaymentMethod,
     routeCoordinates,
+    pickupRouteCoordinates,
     estimatedDistanceMeters,
     estimatedDurationSeconds,
     estimatedFare,
@@ -490,14 +491,25 @@ export default function HomePage() {
     setRecenterRouteCount((prev) => prev + 1);
     const activeOrigin = currentTrip?.origin || origin || location;
     const activeDest = currentTrip?.destination || destination;
+    const isApproaching = currentTrip?.status === 'DRIVER_ASSIGNED' || currentTrip?.status === 'DRIVER_ARRIVING';
 
-    if (
+    if (isApproaching && currentTrip?.driver?.current_location && activeOrigin) {
+      if (!currentTrip?.pickupRouteCoordinates || currentTrip.pickupRouteCoordinates.length === 0) {
+        try {
+          const pRoute = await calculateRoute(currentTrip.driver.current_location, activeOrigin);
+          if (pRoute?.coordinates?.length) {
+            usePassengerTripStore.getState().setPickupRouteCoordinates(pRoute.coordinates);
+          }
+        } catch (_) {}
+      }
+    } else if (
       activeOrigin &&
       activeDest &&
       (!currentTrip?.routeCoordinates || currentTrip.routeCoordinates.length === 0)
     ) {
       try {
-        const route = await calculateRoute(activeOrigin, activeDest);
+        const startPt = currentTrip?.driver?.current_location || activeOrigin;
+        const route = await calculateRoute(startPt, activeDest);
         if (route?.coordinates?.length) {
           setRouteInfo({
             coordinates: route.coordinates,
@@ -510,7 +522,11 @@ export default function HomePage() {
     }
 
     setIsPanelCollapsed(true);
-    setGpsToastMsg('🗺️ Visualizando o trajeto completo no mapa');
+    setGpsToastMsg(
+      isApproaching
+        ? '🚗 Visualizando trajeto do motorista até seu embarque'
+        : '🗺️ Visualizando o trajeto completo até o destino'
+    );
     setTimeout(() => setGpsToastMsg(null), 2500);
   }, [currentTrip, origin, destination, location, estimatedFare, setRouteInfo]);
 
@@ -755,6 +771,12 @@ export default function HomePage() {
               ? currentTrip.routeCoordinates
               : routeCoordinates
           }
+          pickupRouteCoordinates={
+            currentTrip?.pickupRouteCoordinates && currentTrip.pickupRouteCoordinates.length > 0
+              ? currentTrip.pickupRouteCoordinates
+              : pickupRouteCoordinates
+          }
+          tripStatus={currentTrip?.status}
           driver={currentTrip?.driver}
           nearbyDrivers={onlineDrivers}
           accuracy={accuracy}

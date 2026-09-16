@@ -44,6 +44,7 @@ export interface PassengerTrip {
   origin: LocationCoordinates;
   destination: LocationCoordinates;
   routeCoordinates?: Array<[number, number]>;
+  pickupRouteCoordinates?: Array<[number, number]>;
   category: TripCategory;
   paymentMethod: PaymentMethod;
   estimatedDistanceMeters: number;

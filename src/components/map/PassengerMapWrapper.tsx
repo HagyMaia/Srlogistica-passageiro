@@ -7,6 +7,8 @@ export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
   routeCoordinates?: Array<[number, number]>;
+  pickupRouteCoordinates?: Array<[number, number]>;
+  tripStatus?: string;
   driver?: DriverInfo | null;
   nearbyDrivers?: Array<{ id: string; latitude: number; longitude: number }>;
   accuracy?: number | null;
