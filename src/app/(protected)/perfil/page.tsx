@@ -24,13 +24,18 @@ import {
   Check,
   Smartphone,
   Download,
-  Fingerprint
+  Fingerprint,
+  Building,
+  Briefcase,
+  Search,
+  Users
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { SupportModal } from '@/components/SupportModal';
 import { PendingApprovalModal } from '@/components/PendingApprovalModal';
 import { SR_SUPPORT_CONFIG } from '@/types';
+import { supabase } from '@/lib/supabase';
 import {
   isBiometricsSupported,
   isBiometricsEnrolled,
@@ -100,6 +105,96 @@ export default function PerfilPage() {
   const [bioEnrolled, setBioEnrolled] = useState(false);
   const [bioLoading, setBioLoading] = useState(false);
   const [bioMsg, setBioMsg] = useState<string | null>(null);
+
+  // Empresas Conveniadas & Ferramenta Admin de Vínculo
+  const [partnerCompanies, setPartnerCompanies] = useState<Array<{ id?: string; name: string; cnpj?: string }>>([
+    { name: 'Moto Honda da Amazônia', cnpj: '04.337.168/0001-48' },
+    { name: 'Samsung Eletrônica da Amazônia', cnpj: '00.280.273/0001-37' },
+    { name: 'Yamaha Motor da Amazônia', cnpj: '04.812.509/0001-90' },
+    { name: 'Polo Industrial de Manaus (PIM)', cnpj: '00.000.000/0000-00' },
+    { name: 'SR Logística Corporativo', cnpj: '52.967.828/0001-17' },
+  ]);
+
+  const [isAdminLinkingOpen, setIsAdminLinkingOpen] = useState(false);
+  const [adminSearchPassenger, setAdminSearchPassenger] = useState('');
+  const [adminPassengersList, setAdminPassengersList] = useState<any[]>([]);
+  const [adminSelectedPassengerId, setAdminSelectedPassengerId] = useState('');
+  const [adminTargetCompany, setAdminTargetCompany] = useState('Moto Honda da Amazônia');
+  const [adminTargetDept, setAdminTargetDept] = useState('Operações / PIM');
+  const [adminLinkingLoading, setAdminLinkingLoading] = useState(false);
+  const [adminLinkingSuccess, setAdminLinkingSuccess] = useState<string | null>(null);
+
+  // Carrega empresas conveniadas
+  useEffect(() => {
+    async function loadCompanies() {
+      try {
+        const { data } = await supabase
+          .from('empresas_conveniadas')
+          .select('id, name, cnpj')
+          .eq('is_active', true)
+          .order('name');
+        if (data && data.length > 0) {
+          setPartnerCompanies(data);
+          setAdminTargetCompany(data[0].name);
+        }
+      } catch (_) {}
+    }
+    loadCompanies();
+  }, []);
+
+  // Carrega passageiros para ferramenta administrativa
+  const loadAdminPassengers = async () => {
+    try {
+      const { data } = await supabase
+        .from('passageiros')
+        .select('id, nome, email, telefone, empresa, setor, status')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (data) {
+        setAdminPassengersList(data);
+        if (data.length > 0 && !adminSelectedPassengerId) {
+          setAdminSelectedPassengerId(data[0].id);
+        }
+      }
+    } catch (_) {}
+  };
+
+  const handleAdminLinkPassenger = async () => {
+    if (!adminSelectedPassengerId) return;
+    setAdminLinkingLoading(true);
+    setAdminLinkingSuccess(null);
+    try {
+      const targetPass = adminPassengersList.find((p) => p.id === adminSelectedPassengerId);
+      const updateData = {
+        empresa: adminTargetCompany,
+        setor: adminTargetDept,
+        origem: 'Vinculado por Admin',
+        updated_at: new Date().toISOString()
+      };
+
+      await supabase.from('passageiros').update(updateData).eq('id', adminSelectedPassengerId);
+
+      if (targetPass?.email) {
+        await supabase
+          .from('profiles')
+          .update({
+            company: adminTargetCompany,
+            corporate_company: adminTargetCompany,
+            department: adminTargetDept,
+            account_type: 'empresa'
+          })
+          .eq('email', targetPass.email);
+      }
+
+      setAdminLinkingSuccess(`Passageiro ${targetPass?.nome || ''} vinculado com sucesso à ${adminTargetCompany}!`);
+      await loadAdminPassengers();
+      setTimeout(() => setAdminLinkingSuccess(null), 4000);
+    } catch (err: any) {
+      alert('Erro ao vincular passageiro: ' + (err.message || 'Falha na conexão'));
+    } finally {
+      setAdminLinkingLoading(false);
+    }
+  };
 
   useEffect(() => {
     async function checkBio() {
@@ -445,22 +540,53 @@ export default function PerfilPage() {
             />
           </Field>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Field label="Empresa Conveniada">
-              <Input
-                value={company}
-                onChange={(e) => setCompany(e.target.value)}
-                placeholder="Ex: SR Logística / Moto Honda"
-              />
-            </Field>
+          {/* Seleção / Edição de Empresa Conveniada */}
+          <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 p-3.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <Building size={14} className="text-brand" /> Empresa Conveniada / Vínculo
+              </span>
+              <span className="text-[10px] text-slate-400">PIM & Corporativo</span>
+            </div>
 
-            <Field label="Setor / Departamento">
-              <Input
-                value={department}
-                onChange={(e) => setDepartment(e.target.value)}
-                placeholder="Ex: Operações / TI"
-              />
-            </Field>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-500 mb-1 block">Escolha da Lista</label>
+                <select
+                  value={partnerCompanies.some(c => c.name === company) ? company : 'Outra'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'Outra') {
+                      setCompany(e.target.value);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 py-2 px-2.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand"
+                >
+                  {partnerCompanies.map((c, idx) => (
+                    <option key={idx} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="Outra">Outra / Digitar Manualmente</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-semibold text-slate-500 mb-1 block">Razão Social / Nome</label>
+                <Input
+                  value={company}
+                  onChange={(e) => setCompany(e.target.value)}
+                  placeholder="Nome da empresa"
+                />
+              </div>
+            </div>
+
+            <div className="pt-1">
+              <Field label="Setor / Departamento">
+                <Input
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  placeholder="Ex: Operações, Qualidade, TI"
+                />
+              </Field>
+            </div>
           </div>
 
           <Field label="E-mail (Autenticado)">
@@ -471,6 +597,26 @@ export default function PerfilPage() {
             />
           </Field>
         </div>
+
+        {/* Botão Especial de Vínculo de Passageiros para Administrador */}
+        {isAdmin && (
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                loadAdminPassengers();
+                setIsAdminLinkingOpen(true);
+              }}
+              className="w-full flex items-center justify-between p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 hover:bg-amber-500/25 transition text-left text-xs font-black"
+            >
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-amber-600 dark:text-amber-400" />
+                <span>Vincular Passageiro a Empresa Conveniada (Admin)</span>
+              </div>
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
 
         {/* Preferência de Pagamento Padrão */}
         <div className="pt-2">
@@ -866,6 +1012,124 @@ export default function PerfilPage() {
             >
               Fechar
             </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Vínculo de Passageiro a Empresa (Exclusivo Administrador) */}
+      {isAdminLinkingOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-dark-800 p-5 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Building size={18} className="text-amber-500" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Vincular Passageiro a Convênio
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsAdminLinkingOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {adminLinkingSuccess && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                ✓ {adminLinkingSuccess}
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  1. Buscar Passageiro Cadastrado
+                </label>
+                <div className="relative mb-2">
+                  <Input
+                    type="text"
+                    placeholder="Filtrar por nome ou e-mail..."
+                    value={adminSearchPassenger}
+                    onChange={(e) => setAdminSearchPassenger(e.target.value)}
+                    className="pl-8 text-xs"
+                  />
+                  <Search size={14} className="absolute left-2.5 top-3 text-slate-400" />
+                </div>
+
+                <select
+                  value={adminSelectedPassengerId}
+                  onChange={(e) => setAdminSelectedPassengerId(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 py-2.5 px-3 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand"
+                >
+                  {adminPassengersList
+                    .filter(
+                      (p) =>
+                        !adminSearchPassenger ||
+                        p.nome?.toLowerCase().includes(adminSearchPassenger.toLowerCase()) ||
+                        p.email?.toLowerCase().includes(adminSearchPassenger.toLowerCase())
+                    )
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.nome} ({p.empresa || 'Particular'}) - {p.email}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  2. Selecionar Empresa Conveniada
+                </label>
+                <select
+                  value={adminTargetCompany}
+                  onChange={(e) => setAdminTargetCompany(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 py-2.5 px-3 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand"
+                >
+                  {partnerCompanies.map((c, idx) => (
+                    <option key={idx} value={c.name}>
+                      {c.name} {c.cnpj ? `(CNPJ: ${c.cnpj})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  3. Setor / Lotação
+                </label>
+                <Input
+                  type="text"
+                  value={adminTargetDept}
+                  onChange={(e) => setAdminTargetDept(e.target.value)}
+                  placeholder="Ex: Produção, Diretoria, Logística"
+                />
+              </div>
+
+              <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-800 dark:text-amber-300">
+                Esta ação atualizará o cadastro do passageiro para o tipo Corporativo com faturamento direto via Voucher da empresa conveniada.
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                onClick={() => setIsAdminLinkingOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                disabled={adminLinkingLoading || !adminSelectedPassengerId}
+                onClick={handleAdminLinkPassenger}
+              >
+                {adminLinkingLoading ? 'Vinculando...' : 'Confirmar Vínculo'}
+              </Button>
+            </div>
           </div>
         </div>
       )}

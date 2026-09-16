@@ -167,10 +167,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             nome: nameVal,
             phone: phoneVal,
             telefone: phoneVal,
-            avatar_url: avatarVal,
-            company: companyVal,
-            department: departmentVal,
-            payment_preference: paymentPreferenceVal,
             role: userMeta.role || profData?.role || 'passenger',
             status: 'active',
             is_approved: true,
@@ -402,7 +398,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         } catch (_) {}
 
-        // 2. Atualiza ou insere na tabela profiles
+        // 2. Atualiza ou insere na tabela profiles (apenas colunas existentes)
         try {
           await supabase
             .from('profiles')
@@ -413,10 +409,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nome: next.name,
               phone: next.phone,
               telefone: next.phone,
-              avatar_url: next.avatar_url,
-              company: next.company,
-              department: next.department,
-              payment_preference: next.payment_preference,
               role: next.role || 'passenger',
               status: next.status || 'active',
               is_approved: next.is_approved !== false
@@ -425,18 +417,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // 3. Atualiza na tabela passageiros
         try {
-          await supabase
+          const passPayload: any = {
+            nome: next.name,
+            nome_social: next.name?.split(' ')[0],
+            nome_completo: next.name,
+            telefone: next.phone,
+            empresa: next.company,
+            setor: next.department,
+            updated_at: new Date().toISOString()
+          };
+
+          const { error: errId } = await supabase
             .from('passageiros')
-            .update({
-              nome: next.name,
-              nome_social: next.name?.split(' ')[0],
-              telefone: next.phone,
-              empresa: next.company,
-              setor: next.department,
-              foto: next.avatar_url,
-              foto_url: next.avatar_url
-            })
+            .update(passPayload)
             .eq('id', user.id);
+
+          if (errId && user.email) {
+            await supabase
+              .from('passageiros')
+              .update(passPayload)
+              .eq('email', user.email);
+          }
         } catch (_) {}
       }
     } catch (err) {

@@ -620,6 +620,12 @@ export default function HomePage() {
     }));
   }, [selectedPaymentMethod, estimatedDistanceMeters, estimatedDurationSeconds]);
 
+  // Tarifa dinâmica da categoria atualmente selecionada
+  const activeCategoryFare = useMemo(() => {
+    const matched = categories.find((c) => c.id === selectedCategory);
+    return matched?.calculatedFare ?? estimatedFare;
+  }, [categories, selectedCategory, estimatedFare]);
+
   // Validação se origem e destino são o mesmo local
   const isSameLocation = useMemo<boolean>(() => {
     if (!origin || !destination) return false;
@@ -1702,13 +1708,13 @@ export default function HomePage() {
                     ) : rideMode === 'SCHEDULE' ? (
                       <div className="flex items-center justify-center gap-2">
                         <CalendarCheck size={18} />
-                        <span>Agendar {getCategoryTitle(selectedCategory)} • {formatCurrency(estimatedFare)}</span>
+                        <span>Agendar {getCategoryTitle(selectedCategory)} • {formatCurrency(activeCategoryFare)}</span>
                       </div>
                     ) : (
                       <div className="flex items-center justify-center gap-2">
                         <span>Solicitar {getCategoryTitle(selectedCategory)}</span>
                         <span>•</span>
-                        <span>{formatCurrency(estimatedFare)}</span>
+                        <span>{formatCurrency(activeCategoryFare)}</span>
                         <ArrowRight size={18} />
                       </div>
                     )}

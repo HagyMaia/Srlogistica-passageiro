@@ -10,21 +10,43 @@ export interface LocationCoordinates {
 
 export type UserRole = 'passenger' | 'driver' | 'admin';
 export type AccountStatus = 'active' | 'pending' | 'rejected' | 'blocked';
+export type PassengerAccountType = 'particular' | 'empresa';
+
+export interface PartnerCompany {
+  id: string;
+  name: string;
+  trade_name?: string;
+  cnpj: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  billing_cycle?: 'QUINZENAL' | 'MENSAL';
+  is_active: boolean;
+  notes?: string;
+  created_at?: string;
+}
 
 export interface PassengerProfile {
   id: string;
   name: string;
   email: string;
   phone?: string;
+  cpf?: string;
   avatar_url?: string;
   role: 'passenger' | 'driver' | 'admin';
+  account_type?: PassengerAccountType;
   rating?: number;
   total_rides?: number;
   payment_preference?: 'PIX' | 'VOUCHER';
   corporate_company?: string;
   company?: string;
+  company_cnpj?: string;
+  partner_company_id?: string;
   cost_center?: string;
   department?: string;
+  employee_registration?: string;
+  shift?: string;
+  pickup_address?: string;
   status?: AccountStatus;
   is_approved?: boolean;
   approved_at?: string;
@@ -38,6 +60,7 @@ export interface DriverInfo {
   phone: string;
   rating: number;
   total_rides: number;
+  category_type?: 'particular' | 'empresa';
   vehicle: {
     brand: string;
     model: string;

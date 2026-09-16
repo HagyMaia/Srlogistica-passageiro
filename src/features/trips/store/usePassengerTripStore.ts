@@ -9,6 +9,7 @@ import type {
 import type { LocationCoordinates, PaymentMethod, DriverInfo } from '@/types';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { haversineDistance } from '@/services/routing';
+import { calculateFare } from '../domain/pricing';
 
 const STORAGE_KEY = 'sr-passenger-active-trip';
 const SCHEDULED_STORAGE_KEY = 'sr-passenger-scheduled-trips';
@@ -200,7 +201,19 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
     }
   },
 
-  setSelectedCategory: (selectedCategory) => set({ selectedCategory }),
+  setSelectedCategory: (selectedCategory) => {
+    const { estimatedDistanceMeters, estimatedDurationSeconds } = get();
+    if (estimatedDistanceMeters > 0) {
+      const fare = calculateFare({
+        distanceMeters: estimatedDistanceMeters,
+        durationSeconds: estimatedDurationSeconds,
+        category: selectedCategory
+      });
+      set({ selectedCategory, estimatedFare: fare.totalFare });
+    } else {
+      set({ selectedCategory });
+    }
+  },
   setSelectedPaymentMethod: (selectedPaymentMethod) => set({ selectedPaymentMethod }),
 
   setRouteInfo: ({ coordinates, distanceMeters, durationSeconds, estimatedFare }) => {
@@ -564,6 +577,15 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
 
     const newTripId = generateUUID();
 
+    const categoryFareCalc = estimatedDistanceMeters > 0
+      ? calculateFare({
+          distanceMeters: estimatedDistanceMeters,
+          durationSeconds: estimatedDurationSeconds,
+          category: selectedCategory
+        }).totalFare
+      : estimatedFare;
+    const finalFare = categoryFareCalc || estimatedFare;
+
     const newTrip: PassengerTrip = {
       id: newTripId,
       status: 'SEARCHING_DRIVER',
@@ -577,7 +599,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       paymentMethod: selectedPaymentMethod,
       estimatedDistanceMeters,
       estimatedDurationSeconds,
-      estimatedFare,
+      estimatedFare: finalFare,
       requestedAt: new Date().toISOString()
     };
 
@@ -596,7 +618,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
           dropoff_address: destination.address || `${destination.latitude}, ${destination.longitude}`,
           dropoff_lat: destination.latitude,
           dropoff_lng: destination.longitude,
-          fare_amount: estimatedFare,
+          fare_amount: finalFare,
           distance_km: Math.max(1, Math.round((estimatedDistanceMeters / 1000) * 10) / 10),
           status: 'SEARCHING'
         };
@@ -680,6 +702,15 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
 
     const newTripId = generateUUID();
 
+    const categoryFareCalc = estimatedDistanceMeters > 0
+      ? calculateFare({
+          distanceMeters: estimatedDistanceMeters,
+          durationSeconds: estimatedDurationSeconds,
+          category: selectedCategory
+        }).totalFare
+      : estimatedFare;
+    const finalFare = categoryFareCalc || estimatedFare;
+
     const newScheduledTrip: PassengerTrip = {
       id: newTripId,
       status: 'SCHEDULED',
@@ -693,7 +724,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       paymentMethod: selectedPaymentMethod,
       estimatedDistanceMeters,
       estimatedDurationSeconds,
-      estimatedFare,
+      estimatedFare: finalFare,
       requestedAt: new Date().toISOString(),
       scheduledFor,
       notes

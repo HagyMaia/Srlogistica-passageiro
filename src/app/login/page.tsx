@@ -106,13 +106,21 @@ export default function LoginPage() {
     setPendingApprovalUser(null);
 
     try {
+      const cleanEmail = email.trim().toLowerCase();
       const { data, error } = await supabase.auth.signInWithPassword({
-        email,
+        email: cleanEmail,
         password
       });
 
       if (error) {
-        setErrorMsg(error.message || 'Falha ao autenticar. Verifique suas credenciais.');
+        const errText = (error.message || '').toLowerCase();
+        if (errText.includes('invalid login credentials') || errText.includes('invalid_credentials')) {
+          setErrorMsg('E-mail ou senha incorretos.');
+        } else if (errText.includes('email not confirmed')) {
+          setErrorMsg('E-mail ainda não confirmado. Verifique sua caixa de entrada.');
+        } else {
+          setErrorMsg(error.message || 'Falha ao autenticar. Verifique suas credenciais.');
+        }
         setLoading(false);
         return;
       }
@@ -123,39 +131,88 @@ export default function LoginPage() {
           try {
             await enrollBiometrics({
               id: data.user.id,
-              email: data.user.email || email,
-              name: data.user.user_metadata?.name || email.split('@')[0]
+              email: data.user.email || cleanEmail,
+              name: data.user.user_metadata?.name || cleanEmail.split('@')[0]
             });
           } catch (_) {}
         }
 
         // Verifica se o cadastro está com aprovação pendente no banco
         try {
-          const { data: profData } = await supabase
+          let profData: any = null;
+          const { data: prById } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', data.user.id)
             .maybeSingle();
+          profData = prById;
+          if (!profData && data.user.email) {
+            const { data: prByEmail } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('email', data.user.email)
+              .maybeSingle();
+            profData = prByEmail;
+          }
 
-          const { data: passData } = await supabase
+          let passData: any = null;
+          const { data: pById } = await supabase
             .from('passageiros')
             .select('*')
             .eq('id', data.user.id)
             .maybeSingle();
+          passData = pById;
+          if (!passData && data.user.email) {
+            const { data: pByEmail } = await supabase
+              .from('passageiros')
+              .select('*')
+              .eq('email', data.user.email)
+              .maybeSingle();
+            passData = pByEmail;
+          }
+
+          // Se o usuário não existe na tabela passageiros, cadastra automaticamente como Pendente
+          if (!passData && data.user.email) {
+            try {
+              const newPass = {
+                id: data.user.id,
+                nome: data.user.user_metadata?.name || data.user.user_metadata?.nome || data.user.email.split('@')[0],
+                nome_social: (data.user.user_metadata?.name || data.user.user_metadata?.nome || data.user.email.split('@')[0]).split(' ')[0],
+                nome_completo: data.user.user_metadata?.name || data.user.user_metadata?.nome || data.user.email.split('@')[0],
+                cpf: data.user.user_metadata?.cpf || 'Não informado',
+                telefone: data.user.user_metadata?.phone || data.user.user_metadata?.telefone || '',
+                email: data.user.email,
+                empresa: data.user.user_metadata?.company || data.user.user_metadata?.empresa || 'Passageiro',
+                setor: data.user.user_metadata?.department || data.user.user_metadata?.setor || 'Operações / Geral',
+                matricula: 'App Passageiro',
+                turno: 'Turno Comercial',
+                origem: 'App Passageiro',
+                status: 'Pendente',
+                created_at: new Date().toISOString()
+              };
+              await supabase.from('passageiros').insert([newPass]);
+              passData = newPass;
+            } catch (_) {}
+          }
 
           const passStatus = passData?.status;
           const profStatus = profData?.status;
+          const userMeta = data.user.user_metadata || {};
           const isApproved = 
             passStatus === 'Aprovado' || 
+            passStatus === 'aprovado' ||
+            passStatus === 'active' ||
             profData?.is_approved === true || 
             profData?.approved === true || 
             profStatus === 'active' || 
-            profStatus === 'approved';
+            profStatus === 'approved' ||
+            userMeta.is_approved === true ||
+            userMeta.role === 'admin';
 
-          if (!isApproved && (passStatus === 'Pendente' || profStatus === 'pending')) {
+          if (!isApproved && (passStatus === 'Pendente' || passStatus === 'Reprovado' || profStatus === 'pending' || !profStatus)) {
             setPendingApprovalUser({
-              email: passData?.email || profData?.email || email,
-              name: passData?.nome_social || passData?.nome || profData?.name || profData?.nome || 'Passageiro'
+              email: passData?.email || profData?.email || data.user.email || cleanEmail,
+              name: passData?.nome_social || passData?.nome || profData?.name || profData?.nome || userMeta.name || 'Passageiro'
             });
             setLoading(false);
             return;
