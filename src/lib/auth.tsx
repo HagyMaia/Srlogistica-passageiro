@@ -9,6 +9,7 @@ import {
   getInstantSyncPassengerAvatar,
   resolveBestAvatar,
   createCompactAvatarThumbnail,
+  uploadAvatarToSupabaseStorage,
   isCustomAvatar,
   DEFAULT_AVATAR_URL
 } from '@/lib/avatar-storage';
@@ -517,17 +518,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       if (isSupabaseConfigured && (user || activeUserId)) {
-        // Gera miniatura compacta (120x120 JPEG ~3KB) para os metadados do Auth do Supabase
+        // 1. Processa a foto: tenta upload para o Supabase Storage público e gera miniatura
+        let cloudAvatarUrl = next.avatar_url;
         let compactCloudAvatar = next.avatar_url;
-        if (next.avatar_url && next.avatar_url.startsWith('data:image/')) {
+
+        if (next.avatar_url && (next.avatar_url.startsWith('data:image/') || next.avatar_url.startsWith('blob:'))) {
           try {
-            compactCloudAvatar = await createCompactAvatarThumbnail(next.avatar_url);
+            // Tenta enviar para o Supabase Storage para gerar uma URL pública direta da foto
+            const storageUrl = await uploadAvatarToSupabaseStorage(activeUserId || 'user', next.avatar_url);
+            if (storageUrl) {
+              cloudAvatarUrl = storageUrl;
+              compactCloudAvatar = storageUrl;
+            } else {
+              compactCloudAvatar = await createCompactAvatarThumbnail(next.avatar_url);
+              cloudAvatarUrl = compactCloudAvatar;
+            }
           } catch (_) {
             compactCloudAvatar = next.avatar_url;
+            cloudAvatarUrl = next.avatar_url;
           }
         }
 
-        // 3. Atualiza nos metadados do Auth do Supabase (armazenamento persistente em nuvem)
+        // 2. Atualiza nos metadados do Auth do Supabase (armazenamento persistente em nuvem)
         try {
           await supabase.auth.updateUser({
             data: {
@@ -539,9 +551,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               matricula: next.employee_registration,
               turno: next.shift,
               endereco: next.pickup_address,
-              avatar_url: compactCloudAvatar,
-              foto: compactCloudAvatar,
-              avatar: compactCloudAvatar,
+              avatar_url: cloudAvatarUrl,
+              foto: cloudAvatarUrl,
+              foto_url: cloudAvatarUrl,
+              avatar: cloudAvatarUrl,
               company: next.company,
               empresa: next.company,
               department: next.department,
@@ -555,7 +568,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn('Aviso ao atualizar metadados do Auth:', e);
         }
 
-        // 4. Atualiza ou insere na tabela profiles
+        // 3. Atualiza ou insere na tabela profiles (incluindo foto e avatar_url)
         try {
           await supabase
             .from('profiles')
@@ -567,13 +580,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               phone: next.phone,
               telefone: next.phone,
               cpf: next.cpf,
+              avatar_url: cloudAvatarUrl || null,
+              foto: cloudAvatarUrl || null,
+              foto_url: cloudAvatarUrl || null,
+              avatar: cloudAvatarUrl || null,
               role: next.role || 'passenger',
               status: next.status,
               is_approved: next.is_approved
             });
         } catch (_) {}
 
-        // 5. Atualiza na tabela passageiros (fila de aprovação do painel admin)
+        // 4. Atualiza na tabela passageiros (fila de aprovação do painel admin com foto visível)
         try {
           const passStatus = next.is_approved ? 'Aprovado' : 'Pendente';
           const passPayload: any = {
@@ -589,6 +606,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             endereco: next.pickup_address || null,
             empresa: next.company || 'Passageiro Particular',
             setor: next.department || 'Operações / Geral',
+            foto: cloudAvatarUrl || null,
+            foto_url: cloudAvatarUrl || null,
+            avatar_url: cloudAvatarUrl || null,
+            avatar: cloudAvatarUrl || null,
             origem: hasCompanyOrProfileChanges ? 'Atualização de Perfil via App' : 'App Passageiro',
             status: passStatus,
             is_approved: next.is_approved,

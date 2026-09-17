@@ -7,6 +7,8 @@
  * 4. Event Bus no navegador (Eventos customizados para sincronização em tempo real entre páginas/abas)
  */
 
+import { supabase, isSupabaseConfigured } from './supabase';
+
 const DB_NAME = 'sr_passenger_db';
 const STORE_NAME = 'passenger_avatars';
 const DB_VERSION = 1;
@@ -286,6 +288,66 @@ export async function createCompactAvatarThumbnail(
   fileOrDataUrl: File | Blob | string
 ): Promise<string> {
   return optimizeAvatarImage(fileOrDataUrl, 120, 0.65);
+}
+
+/**
+ * Faz upload da imagem de perfil para o Supabase Storage (tentando buckets 'avatars', 'passageiros', 'perfil')
+ * Retorna a URL pública direta da imagem se o bucket público estiver ativo, permitindo que a central carregue instantaneamente.
+ */
+export async function uploadAvatarToSupabaseStorage(
+  userId: string,
+  base64OrBlob: string | Blob | File
+): Promise<string | null> {
+  if (!isSupabaseConfigured || !userId) return null;
+  try {
+    let blob: Blob;
+    if (typeof base64OrBlob === 'string' && base64OrBlob.startsWith('data:')) {
+      const parts = base64OrBlob.split(',');
+      const mimeMatch = parts[0].match(/:(.*?);/);
+      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+      const bstr = atob(parts[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while (n--) {
+        u8arr[n] = bstr.charCodeAt(n);
+      }
+      blob = new Blob([u8arr], { type: mime });
+    } else if (base64OrBlob instanceof Blob) {
+      blob = base64OrBlob;
+    } else {
+      return null;
+    }
+
+    const cleanId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const fileName = `passenger_${cleanId}_${Date.now()}.jpg`;
+    const bucketsToTry = ['avatars', 'passageiros', 'perfil', 'public'];
+
+    for (const bucket of bucketsToTry) {
+      try {
+        const { data, error } = await supabase.storage
+          .from(bucket)
+          .upload(fileName, blob, {
+            contentType: 'image/jpeg',
+            upsert: true
+          });
+
+        if (!error && data?.path) {
+          const { data: publicUrlData } = supabase.storage
+            .from(bucket)
+            .getPublicUrl(data.path);
+
+          if (publicUrlData?.publicUrl) {
+            return publicUrlData.publicUrl;
+          }
+        }
+      } catch (_) {
+        // Tenta o próximo bucket
+      }
+    }
+  } catch (err) {
+    console.warn('Tentativa de upload no Supabase Storage:', err);
+  }
+  return null;
 }
 
 /**
