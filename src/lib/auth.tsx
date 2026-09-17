@@ -7,6 +7,9 @@ import {
   persistPassengerAvatar,
   getPersistedPassengerAvatar,
   getInstantSyncPassengerAvatar,
+  resolveBestAvatar,
+  createCompactAvatarThumbnail,
+  isCustomAvatar,
   DEFAULT_AVATAR_URL
 } from '@/lib/avatar-storage';
 
@@ -29,7 +32,7 @@ const DEFAULT_PROFILE: PassengerProfile = {
   avatar_url: DEFAULT_AVATAR_URL,
   rating: 5.0,
   total_rides: 0,
-  payment_preference: 'PIX',
+  payment_preference: 'VOUCHER',
   status: 'active',
   is_approved: true,
   created_at: new Date().toISOString()
@@ -58,10 +61,16 @@ function getInitialCachedSession(): { user: any | null; profile: PassengerProfil
         parsed?.user?.email !== 'passageiro@srlogistica.com.br' &&
         parsed?.profile?.name !== 'Passageiro SR'
       ) {
-        // Encontra o avatar mais recente do cache
         const instantAvatar = getInstantSyncPassengerAvatar(parsed.user.id, parsed.user.email);
+        const resolvedAvatar = resolveBestAvatar({
+          persistedAvatar: instantAvatar,
+          instantAvatar: instantAvatar,
+          metaAvatar: parsed.user?.user_metadata?.avatar_url,
+          defaultAvatar: parsed.profile?.avatar_url || DEFAULT_AVATAR_URL
+        });
+
         const mergedProfile = parsed.profile
-          ? { ...parsed.profile, avatar_url: instantAvatar || parsed.profile.avatar_url || DEFAULT_AVATAR_URL }
+          ? { ...parsed.profile, avatar_url: resolvedAvatar }
           : null;
         return { user: parsed.user, profile: mergedProfile };
       }
@@ -75,6 +84,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<any | null>(initialCache.user);
   const [profile, setProfile] = useState<PassengerProfile | null>(initialCache.profile);
   const [loading, setLoading] = useState(true);
+
+  // Escuta atualizações de avatar em tempo real disparadas por qualquer aba ou componente
+  useEffect(() => {
+    const handleAvatarUpdated = (e: any) => {
+      const newUrl = e?.detail?.avatarUrl;
+      if (newUrl) {
+        setProfile((prev) => (prev ? { ...prev, avatar_url: newUrl } : null));
+      }
+    };
+    window.addEventListener('sr_avatar_updated', handleAvatarUpdated);
+    return () => window.removeEventListener('sr_avatar_updated', handleAvatarUpdated);
+  }, []);
 
   const fetchProfile = async (currentUser: any) => {
     if (!currentUser) {
@@ -112,26 +133,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userMeta = currentUser.user_metadata || {};
       const appMeta = currentUser.app_metadata || {};
 
-      const isMetaApproved = 
-        userMeta.is_approved === true || 
-        userMeta.status === 'active' || 
-        userMeta.role === 'admin' ||
-        appMeta.role === 'admin';
+      const isAdmin = userMeta.role === 'admin' || appMeta.role === 'admin' || profData?.role === 'admin';
 
-      const isPassApproved = 
-        passData?.status === 'Aprovado' || 
-        passData?.status === 'aprovado' || 
-        passData?.status === 'active';
+      // Avaliação rigorosa da aprovação de perfil, empresa e vínculo:
+      // Se houver registro na tabela 'passageiros', a decisão do painel administrativo é a fonte soberana
+      let isApproved = false;
+      if (isAdmin) {
+        isApproved = true;
+      } else if (passData) {
+        isApproved = 
+          (passData.status === 'Aprovado' || passData.status === 'aprovado' || passData.is_approved === true) &&
+          passData.status !== 'Pendente' &&
+          passData.status !== 'pendente' &&
+          passData.status !== 'Rejeitado';
+      } else if (profData) {
+        isApproved = 
+          (profData.is_approved === true || profData.approved === true || profData.status === 'active' || profData.status === 'approved') &&
+          profData.status !== 'pending' &&
+          profData.status !== 'blocked';
+      } else {
+        isApproved = userMeta.is_approved === true && userMeta.status !== 'pending';
+      }
 
-      const isProfApproved = 
-        profData?.is_approved === true || 
-        profData?.approved === true || 
-        profData?.status === 'active' || 
-        profData?.status === 'approved' ||
-        profData?.role === 'admin';
-
-      const isApproved = isMetaApproved || isPassApproved || isProfApproved;
-      const statusVal = isApproved ? 'active' : (profData?.status || passData?.status || userMeta.status || 'pending');
+      const statusVal = isAdmin 
+        ? 'active' 
+        : (isApproved ? 'active' : (passData?.status === 'Rejeitado' || profData?.status === 'blocked' ? 'blocked' : 'pending'));
 
       const nameVal = 
         profData?.name || 
@@ -151,24 +177,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userMeta.telefone || 
         '';
 
-      // Resolução inteligente e prioritária da imagem de perfil:
-      // 1. userMeta (Auth Metadata na Nuvem)
-      // 2. profData / passData
-      // 3. Persistência local (IndexedDB + LocalStorage)
-      // 4. Default avatar
+      // Resolução inteligente e protegida da imagem de perfil:
+      // Protege fotos customizadas do usuário contra sobreposição de URLs genéricas
       const metaAvatar = userMeta.avatar_url || userMeta.foto || userMeta.avatar;
       const dbAvatar = profData?.avatar_url || profData?.avatar || profData?.foto || profData?.foto_url || passData?.avatar_url || passData?.foto || passData?.foto_url;
       const persistedAvatar = await getPersistedPassengerAvatar(currentUser.id, currentUser.email);
       const instantAvatar = getInstantSyncPassengerAvatar(currentUser.id, currentUser.email);
 
-      const avatarVal =
-        metaAvatar ||
-        dbAvatar ||
-        persistedAvatar ||
-        instantAvatar ||
-        DEFAULT_AVATAR_URL;
+      const avatarVal = resolveBestAvatar({
+        metaAvatar,
+        dbAvatar,
+        persistedAvatar,
+        instantAvatar,
+        defaultAvatar: DEFAULT_AVATAR_URL
+      });
 
-      // Fixa o avatar resolvido no cache local para carregamento instantâneo permanente
+      // Se a foto local for personalizada mas o Auth em nuvem ainda não tiver, sincroniza em background
+      if (avatarVal && isCustomAvatar(avatarVal) && (!metaAvatar || metaAvatar === DEFAULT_AVATAR_URL)) {
+        try {
+          const compactThumb = avatarVal.startsWith('data:image/')
+            ? await createCompactAvatarThumbnail(avatarVal)
+            : avatarVal;
+          supabase.auth.updateUser({
+            data: { avatar_url: compactThumb, foto: compactThumb, avatar: compactThumb }
+          }).catch(() => {});
+        } catch (_) {}
+      }
+
+      // Fixa o avatar resolvido no armazenamento local
       if (avatarVal && avatarVal !== DEFAULT_AVATAR_URL) {
         await persistPassengerAvatar({
           userId: currentUser.id,
@@ -183,60 +219,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         passData?.empresa || 
         userMeta.company || 
         userMeta.empresa || 
-        'SR Logística & Transporte';
+        '';
 
-      const departmentVal = 
+      const deptVal = 
         profData?.department || 
         profData?.setor || 
         passData?.setor || 
         userMeta.department || 
         userMeta.setor || 
-        'Operações e Gestão';
+        '';
 
-      const paymentPreferenceVal = 
-        profData?.payment_preference || 
-        passData?.payment_preference || 
-        userMeta.payment_preference || 
-        'PIX';
-
-      // Sincroniza tabela profiles se for aprovado
-      if (isApproved && isSupabaseConfigured) {
-        try {
-          await supabase.from('profiles').upsert({
-            id: currentUser.id,
-            email: currentUser.email,
-            name: nameVal,
-            nome: nameVal,
-            phone: phoneVal,
-            telefone: phoneVal,
-            role: userMeta.role || profData?.role || 'passenger',
-            status: 'active',
-            is_approved: true,
-            approved: true
-          });
-        } catch (_) {}
-      }
+      const roleVal = profData?.role || appMeta.role || userMeta.role || 'passenger';
+      const prefVal = (profData?.payment_preference || userMeta.payment_preference || 'VOUCHER') as 'PIX' | 'VOUCHER';
 
       const finalProfile: PassengerProfile = {
         id: currentUser.id,
         name: nameVal,
-        email: currentUser.email,
+        email: currentUser.email || '',
         phone: phoneVal,
+        role: roleVal,
         avatar_url: avatarVal,
-        company: companyVal,
-        department: departmentVal,
-        role: (userMeta.role as any) || (profData?.role as any) || 'passenger',
-        rating: profData?.rating || 5.0,
-        total_rides: profData?.total_rides || 0,
-        payment_preference: paymentPreferenceVal,
-        status: statusVal,
+        company: companyVal || undefined,
+        corporate_company: companyVal || undefined,
+        department: deptVal || undefined,
+        rating: 5.0,
+        total_rides: passData?.total_rides || 0,
+        payment_preference: prefVal,
+        status: statusVal as 'active' | 'pending' | 'blocked',
         is_approved: isApproved,
-        created_at: profData?.created_at || passData?.created_at || new Date().toISOString()
+        created_at: currentUser.created_at || new Date().toISOString()
       };
 
       setProfile(finalProfile);
 
-      // Salva sessão local ativa completa para reaberturas instantâneas do app / APK
       if (typeof window !== 'undefined') {
         try {
           localStorage.setItem(
@@ -436,13 +451,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = async (updates: Partial<PassengerProfile>) => {
     const currentProf = profile || DEFAULT_PROFILE;
-    const next = { ...currentProf, ...updates };
+    const isUserAdmin = currentProf.role === 'admin' || user?.user_metadata?.role === 'admin';
+
+    // Se houver alteração em dados de perfil, empresa ou vínculo, e não for admin, coloca em análise
+    const hasCompanyOrProfileChanges =
+      (updates.company !== undefined && updates.company !== currentProf.company) ||
+      (updates.department !== undefined && updates.department !== currentProf.department) ||
+      (updates.name !== undefined && updates.name !== currentProf.name) ||
+      (updates.phone !== undefined && updates.phone !== currentProf.phone);
+
+    const nextStatus = updates.status !== undefined
+      ? updates.status
+      : (!isUserAdmin && hasCompanyOrProfileChanges ? 'pending' : (currentProf.status || 'pending'));
+
+    const nextIsApproved = updates.is_approved !== undefined
+      ? updates.is_approved
+      : (!isUserAdmin && hasCompanyOrProfileChanges ? false : (currentProf.is_approved ?? false));
+
+    const next: PassengerProfile = {
+      ...currentProf,
+      ...updates,
+      status: nextStatus as 'active' | 'pending' | 'blocked',
+      is_approved: nextIsApproved
+    };
+
     setProfile(next);
 
     const activeUserId = user?.id || next.id;
     const activeUserEmail = user?.email || next.email;
 
-    // 1. Salva a imagem de perfil no armazenamento multicamadas (IndexedDB + LocalStorage)
+    // 1. Salva a imagem de perfil no armazenamento multicamadas local com prioridade absoluta
     if (next.avatar_url) {
       await persistPassengerAvatar({
         userId: activeUserId,
@@ -466,6 +504,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       if (isSupabaseConfigured && (user || activeUserId)) {
+        // Gera miniatura compacta (120x120 JPEG ~3KB) para os metadados do Auth do Supabase
+        let compactCloudAvatar = next.avatar_url;
+        if (next.avatar_url && next.avatar_url.startsWith('data:image/')) {
+          try {
+            compactCloudAvatar = await createCompactAvatarThumbnail(next.avatar_url);
+          } catch (_) {
+            compactCloudAvatar = next.avatar_url;
+          }
+        }
+
         // 3. Atualiza nos metadados do Auth do Supabase (armazenamento persistente em nuvem)
         try {
           await supabase.auth.updateUser({
@@ -474,14 +522,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nome: next.name,
               phone: next.phone,
               telefone: next.phone,
-              avatar_url: next.avatar_url,
-              foto: next.avatar_url,
-              avatar: next.avatar_url,
+              avatar_url: compactCloudAvatar,
+              foto: compactCloudAvatar,
+              avatar: compactCloudAvatar,
               company: next.company,
               empresa: next.company,
               department: next.department,
               setor: next.department,
-              payment_preference: next.payment_preference
+              payment_preference: next.payment_preference,
+              status: next.status,
+              is_approved: next.is_approved
             }
           });
         } catch (e) {
@@ -500,27 +550,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               phone: next.phone,
               telefone: next.phone,
               role: next.role || 'passenger',
-              status: next.status || 'active',
-              is_approved: next.is_approved !== false
+              status: next.status,
+              is_approved: next.is_approved
             });
         } catch (_) {}
 
-        // 5. Atualiza na tabela passageiros
+        // 5. Atualiza na tabela passageiros (fila de aprovação do painel admin)
         try {
+          const passStatus = next.is_approved ? 'Aprovado' : 'Pendente';
           const passPayload: any = {
+            id: activeUserId,
             nome: next.name,
             nome_social: next.name?.split(' ')[0],
             nome_completo: next.name,
             telefone: next.phone,
-            empresa: next.company,
-            setor: next.department,
+            email: activeUserEmail,
+            empresa: next.company || 'Passageiro Particular',
+            setor: next.department || 'Operações / Geral',
+            origem: hasCompanyOrProfileChanges ? 'Atualização de Vínculo via App' : 'App Passageiro',
+            status: passStatus,
+            is_approved: next.is_approved,
             updated_at: new Date().toISOString()
           };
 
           const { error: errId } = await supabase
             .from('passageiros')
-            .update(passPayload)
-            .eq('id', activeUserId);
+            .upsert(passPayload);
 
           if (errId && activeUserEmail) {
             await supabase

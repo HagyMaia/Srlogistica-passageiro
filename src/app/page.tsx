@@ -52,6 +52,7 @@ import { searchPlaces, reverseGeocode, cleanHouseNumber, PlaceSuggestion } from 
 import { calculateRoute, haversineDistance } from '@/services/routing';
 import { getAvailableCategories, calculateFare } from '@/features/trips/domain/pricing';
 import { formatCurrency, formatDistance, formatDuration, formatDateTime } from '@/lib/utils';
+import { DEFAULT_AVATAR_URL, getInstantSyncPassengerAvatar } from '@/lib/avatar-storage';
 import { SR_SUPPORT_CONFIG } from '@/types';
 import type { TripCategory, PassengerTrip } from '@/features/trips/domain/passenger-trip.types';
 import type { LocationCoordinates, PaymentMethod } from '@/types';
@@ -236,6 +237,15 @@ export default function HomePage() {
       loadScheduledTrips(user.id);
     }
   }, [user, loadScheduledTrips]);
+
+  // Sincroniza forma de pagamento padrão (VOUCHER por padrão)
+  useEffect(() => {
+    if (profile?.payment_preference) {
+      setSelectedPaymentMethod(profile.payment_preference);
+    } else {
+      setSelectedPaymentMethod('VOUCHER');
+    }
+  }, [profile?.payment_preference, setSelectedPaymentMethod]);
 
   // Sincroniza origem com o GPS em tempo real continuamente (se não foi customizado manualmente)
   useEffect(() => {
@@ -804,10 +814,10 @@ export default function HomePage() {
           >
             <div className="relative">
               <img
-                src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
+                src={profile?.avatar_url || getInstantSyncPassengerAvatar(user?.id, user?.email) || DEFAULT_AVATAR_URL}
                 alt="Avatar"
                 onError={(e) => {
-                  e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';
+                  e.currentTarget.src = DEFAULT_AVATAR_URL;
                 }}
                 className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
               />
@@ -818,11 +828,15 @@ export default function HomePage() {
                 <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
                   {profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro'}
                 </span>
-                {(profile?.payment_preference === 'VOUCHER' || Boolean(profile?.corporate_company || profile?.company)) && (
+                {!isApproved ? (
+                  <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[9px] py-0 px-1 font-bold">
+                    Aguardando aprovação
+                  </Badge>
+                ) : (profile?.payment_preference === 'VOUCHER' || Boolean(profile?.corporate_company || profile?.company)) ? (
                   <Badge className="bg-brand/20 text-brand-800 dark:text-brand border-brand/40 text-[9px] py-0 px-1">
                     Voucher
                   </Badge>
-                )}
+                ) : null}
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-bold">
                 <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -1067,8 +1081,8 @@ export default function HomePage() {
                     <div className="flex items-center gap-2">
                       <AlertCircle size={16} className="text-amber-500 shrink-0" />
                       <div>
-                        <p className="text-xs font-black">Cadastro em Análise</p>
-                        <p className="text-[10px] opacity-80">Você pode solicitar via PIX enquanto seu convênio é validado</p>
+                        <p className="text-xs font-black">Status: Aguardando aprovação</p>
+                        <p className="text-[10px] opacity-80">Você pode solicitar via PIX enquanto seu vínculo com a empresa passa por homologação</p>
                       </div>
                     </div>
                     <ChevronRight size={16} className="text-amber-600 shrink-0" />

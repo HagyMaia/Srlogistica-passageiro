@@ -1,21 +1,30 @@
 /**
- * Utilitário de Armazenamento e Otimização de Imagem de Perfil do Passageiro
- * Implementa persistência multicamadas:
- * 1. IndexedDB (Persistência nativa de alto desempenho para Web / PWA / APK)
+ * Utilitário de Armazenamento, Otimização e Persistência de Imagem de Perfil do Passageiro
+ * Implementa persistência multicamadas ultra-resiliente:
+ * 1. IndexedDB (Persistência nativa de alta capacidade sem limite de 5MB)
  * 2. LocalStorage (Cache síncrono para renderização instantânea 0ms)
- * 3. Supabase Auth User Metadata (Nuvem / Sincronização multi-dispositivo)
+ * 3. Supabase Auth User Metadata (Sincronização em nuvem com compressão inteligente para caber no limite do servidor)
+ * 4. Event Bus no navegador (Eventos customizados para sincronização em tempo real entre páginas/abas)
  */
 
 const DB_NAME = 'sr_passenger_db';
 const STORE_NAME = 'passenger_avatars';
 const DB_VERSION = 1;
 
-const STORAGE_AVATAR_KEY = 'sr_passenger_active_avatar';
-const STORAGE_PROFILE_PREFIX = 'sr-passenger-profile-';
-const STORAGE_AVATAR_PREFIX = 'sr-passenger-avatar-';
+export const STORAGE_AVATAR_KEY = 'sr_passenger_active_avatar';
+export const STORAGE_AVATAR_META_KEY = 'sr_passenger_avatar_meta';
+export const STORAGE_AVATAR_PREFIX = 'sr-passenger-avatar-';
 
 export const DEFAULT_AVATAR_URL =
   'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
+
+export interface StoredAvatarMeta {
+  avatarUrl: string;
+  isCustom: boolean;
+  updatedAt: number;
+  userId?: string;
+  email?: string;
+}
 
 /**
  * Abre o banco de dados IndexedDB
@@ -53,7 +62,7 @@ function openDatabase(): Promise<IDBDatabase | null> {
 /**
  * Salva um valor no IndexedDB por chave
  */
-async function idbSet(key: string, val: string): Promise<void> {
+async function idbSet(key: string, val: any): Promise<void> {
   try {
     const db = await openDatabase();
     if (!db) return;
@@ -83,7 +92,7 @@ async function idbSet(key: string, val: string): Promise<void> {
 /**
  * Obtém um valor do IndexedDB por chave
  */
-async function idbGet(key: string): Promise<string | null> {
+async function idbGet(key: string): Promise<any | null> {
   try {
     const db = await openDatabase();
     if (!db) return null;
@@ -142,12 +151,12 @@ async function idbDelete(key: string): Promise<void> {
 }
 
 /**
- * Processa e otimiza uma imagem para avatar (recorte central quadrado 1:1, alta definição e compactação JPEG)
+ * Processa e otimiza uma imagem para avatar com recorte central quadrado 1:1 e compressão
  */
 export async function optimizeAvatarImage(
   fileOrDataUrl: File | Blob | string,
-  targetSize = 360,
-  quality = 0.85
+  targetSize = 300,
+  quality = 0.8
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -166,11 +175,9 @@ export async function optimizeAvatarImage(
             return;
           }
 
-          // Habilita interpolação suave
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
 
-          // Calcula recorte centralizado 1:1
           const originalWidth = img.naturalWidth || img.width;
           const originalHeight = img.naturalHeight || img.height;
 
@@ -184,7 +191,6 @@ export async function optimizeAvatarImage(
             sourceY = Math.floor((originalHeight - originalWidth) / 2);
           }
 
-          // Desenha centralizado e redimensiona
           ctx.drawImage(
             img,
             sourceX,
@@ -205,7 +211,7 @@ export async function optimizeAvatarImage(
       };
 
       img.onload = handleImageLoad;
-      img.onerror = (e) => reject(new Error('Erro ao carregar a imagem'));
+      img.onerror = () => reject(new Error('Erro ao carregar a imagem'));
 
       if (typeof fileOrDataUrl === 'string') {
         img.src = fileOrDataUrl;
@@ -224,20 +230,54 @@ export async function optimizeAvatarImage(
 }
 
 /**
+ * Cria uma miniatura compacta (120x120 JPEG 0.65, ~3KB a 5KB) estritamente garantida para caber no Supabase Auth User Metadata sem estourar o limite de payload HTTP
+ */
+export async function createCompactAvatarThumbnail(
+  fileOrDataUrl: File | Blob | string
+): Promise<string> {
+  return optimizeAvatarImage(fileOrDataUrl, 120, 0.65);
+}
+
+/**
+ * Verifica se uma string de avatar é personalizada pelo usuário (base64 ou custom URL)
+ */
+export function isCustomAvatar(url?: string | null): boolean {
+  if (!url) return false;
+  if (url === DEFAULT_AVATAR_URL) return false;
+  if (url.startsWith('data:image/')) return true;
+  if (url.includes('blob:')) return true;
+  if (url.includes('supabase.co/storage')) return true;
+  if (url.includes('cloudinary.com') || url.includes('imgbb.com')) return true;
+  return true;
+}
+
+/**
  * Salva o avatar de forma persistente em todas as camadas de armazenamento local
  */
 export async function persistPassengerAvatar(params: {
   userId?: string;
   email?: string;
   avatarUrl: string;
+  isCustom?: boolean;
 }): Promise<void> {
   const { userId, email, avatarUrl } = params;
   if (!avatarUrl) return;
 
-  // 1. Grava no LocalStorage (Síncrono para acesso imediato 0ms)
+  const isCustom = params.isCustom !== undefined ? params.isCustom : isCustomAvatar(avatarUrl);
+  const meta: StoredAvatarMeta = {
+    avatarUrl,
+    isCustom,
+    updatedAt: Date.now(),
+    userId,
+    email: email?.toLowerCase()
+  };
+
+  // 1. Grava no LocalStorage (Síncrono para renderização instantânea 0ms)
   if (typeof window !== 'undefined') {
     try {
       localStorage.setItem(STORAGE_AVATAR_KEY, avatarUrl);
+      localStorage.setItem(STORAGE_AVATAR_META_KEY, JSON.stringify(meta));
+
       if (userId) {
         localStorage.setItem(`${STORAGE_AVATAR_PREFIX}${userId}`, avatarUrl);
       }
@@ -256,6 +296,13 @@ export async function persistPassengerAvatar(params: {
           }
         } catch (_) {}
       }
+
+      // Notifica todos os componentes ativos no navegador
+      window.dispatchEvent(
+        new CustomEvent('sr_avatar_updated', {
+          detail: { avatarUrl, userId, email: email?.toLowerCase(), isCustom }
+        })
+      );
     } catch (e) {
       console.warn('Aviso no LocalStorage ao salvar avatar:', e);
     }
@@ -264,11 +311,14 @@ export async function persistPassengerAvatar(params: {
   // 2. Grava no IndexedDB (Persistência robusta para PWA / APK sem limite de 5MB)
   try {
     await idbSet('current_avatar', avatarUrl);
+    await idbSet('current_avatar_meta', meta);
     if (userId) {
       await idbSet(`user_${userId}`, avatarUrl);
+      await idbSet(`meta_user_${userId}`, meta);
     }
     if (email) {
       await idbSet(`email_${email.toLowerCase()}`, avatarUrl);
+      await idbSet(`meta_email_${email.toLowerCase()}`, meta);
     }
   } catch (e) {
     console.warn('Aviso no IndexedDB ao salvar avatar:', e);
@@ -335,12 +385,53 @@ export async function getPersistedPassengerAvatar(
 }
 
 /**
+ * Resolução inteligente do avatar que protege uploads do usuário contra sobreposição de avatares genéricos/padrão
+ */
+export function resolveBestAvatar(params: {
+  metaAvatar?: string | null;
+  dbAvatar?: string | null;
+  persistedAvatar?: string | null;
+  instantAvatar?: string | null;
+  defaultAvatar?: string;
+}): string {
+  const { metaAvatar, dbAvatar, persistedAvatar, instantAvatar, defaultAvatar = DEFAULT_AVATAR_URL } = params;
+
+  // 1. Se houver upload personalizado local recente (base64), ele tem prioridade máxima contra URLs genéricas
+  if (persistedAvatar && isCustomAvatar(persistedAvatar)) {
+    return persistedAvatar;
+  }
+
+  if (instantAvatar && isCustomAvatar(instantAvatar)) {
+    return instantAvatar;
+  }
+
+  // 2. Se houver avatar personalizado nos metadados do Auth
+  if (metaAvatar && isCustomAvatar(metaAvatar)) {
+    return metaAvatar;
+  }
+
+  // 3. Se houver avatar no banco de dados
+  if (dbAvatar && isCustomAvatar(dbAvatar)) {
+    return dbAvatar;
+  }
+
+  // 4. Qualquer avatar não-nulo disponível
+  if (metaAvatar && metaAvatar !== defaultAvatar) return metaAvatar;
+  if (dbAvatar && dbAvatar !== defaultAvatar) return dbAvatar;
+  if (persistedAvatar) return persistedAvatar;
+  if (instantAvatar) return instantAvatar;
+
+  return defaultAvatar;
+}
+
+/**
  * Remove o avatar salvo nas camadas locais
  */
 export async function clearPersistedPassengerAvatar(userId?: string, email?: string): Promise<void> {
   if (typeof window !== 'undefined') {
     try {
       localStorage.removeItem(STORAGE_AVATAR_KEY);
+      localStorage.removeItem(STORAGE_AVATAR_META_KEY);
       if (userId) {
         localStorage.removeItem(`${STORAGE_AVATAR_PREFIX}${userId}`);
       }
@@ -352,11 +443,14 @@ export async function clearPersistedPassengerAvatar(userId?: string, email?: str
 
   try {
     await idbDelete('current_avatar');
+    await idbDelete('current_avatar_meta');
     if (userId) {
       await idbDelete(`user_${userId}`);
+      await idbDelete(`meta_user_${userId}`);
     }
     if (email) {
       await idbDelete(`email_${email.toLowerCase()}`);
+      await idbDelete(`meta_email_${email.toLowerCase()}`);
     }
   } catch (_) {}
 }

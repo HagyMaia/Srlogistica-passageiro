@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import {
@@ -26,7 +26,7 @@ import type { PaymentMethod } from '@/types';
 export default function CarteiraPage() {
   const { profile, updateProfile } = useAuth();
   const [selectedMethod, setSelectedMethod] = useState<PaymentMethod>(
-    (profile?.payment_preference as PaymentMethod) || 'PIX'
+    (profile?.payment_preference as PaymentMethod) || 'VOUCHER'
   );
 
   const [companyName, setCompanyName] = useState(

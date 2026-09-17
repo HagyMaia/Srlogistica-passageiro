@@ -176,7 +176,7 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
   origin: null,
   destination: null,
   selectedCategory: 'POPULAR',
-  selectedPaymentMethod: 'PIX',
+  selectedPaymentMethod: 'VOUCHER',
   routeCoordinates: [],
   pickupRouteCoordinates: initialSavedTrip?.pickupRouteCoordinates || [],
   estimatedDistanceMeters: 0,

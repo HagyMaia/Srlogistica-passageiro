@@ -38,8 +38,10 @@ import { SR_SUPPORT_CONFIG } from '@/types';
 import { supabase } from '@/lib/supabase';
 import {
   optimizeAvatarImage,
-  DEFAULT_AVATAR_URL,
-  getInstantSyncPassengerAvatar
+  persistPassengerAvatar,
+  clearPersistedPassengerAvatar,
+  getInstantSyncPassengerAvatar,
+  DEFAULT_AVATAR_URL
 } from '@/lib/avatar-storage';
 import {
   isBiometricsSupported,
@@ -91,7 +93,7 @@ export default function PerfilPage() {
   const [phone, setPhone] = useState(profile?.phone || '');
   const [company, setCompany] = useState(profile?.company || 'SR Logística & Transporte');
   const [department, setDepartment] = useState(profile?.department || 'Operações e Gestão');
-  const [paymentPreference, setPaymentPreference] = useState<'PIX' | 'VOUCHER'>(profile?.payment_preference || 'PIX');
+  const [paymentPreference, setPaymentPreference] = useState<'PIX' | 'VOUCHER'>(profile?.payment_preference || 'VOUCHER');
   const [avatarUrl, setAvatarUrl] = useState<string>(() => {
     return profile?.avatar_url || getInstantSyncPassengerAvatar(profile?.id, profile?.email) || DEFAULT_AVATAR_URL;
   });
@@ -273,7 +275,7 @@ export default function PerfilPage() {
     }
   };
 
-  // Manipulador de Upload de Foto com corte quadrado 1:1 e compressão automática
+  // Manipulador de Upload de Foto com corte quadrado 1:1, otimização e persistência
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -287,9 +289,20 @@ export default function PerfilPage() {
     setIsUploadingPhoto(true);
 
     try {
-      const optimizedBase64 = await optimizeAvatarImage(file, 360, 0.85);
+      const optimizedBase64 = await optimizeAvatarImage(file, 300, 0.8);
       setAvatarUrl(optimizedBase64);
+
+      // Persiste imediatamente em todas as camadas locais
+      await persistPassengerAvatar({
+        userId: profile?.id || user?.id,
+        email: profile?.email || user?.email,
+        avatarUrl: optimizedBase64,
+        isCustom: true
+      });
+
+      // Atualiza o estado global e a nuvem
       await updateProfile({ avatar_url: optimizedBase64 });
+
       setIsAvatarModalOpen(false);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
@@ -306,6 +319,14 @@ export default function PerfilPage() {
     try {
       setAvatarUrl(url);
       setIsUploadingPhoto(true);
+
+      await persistPassengerAvatar({
+        userId: profile?.id || user?.id,
+        email: profile?.email || user?.email,
+        avatarUrl: url,
+        isCustom: false
+      });
+
       await updateProfile({ avatar_url: url });
       setIsAvatarModalOpen(false);
       setSavedSuccess(true);
@@ -321,7 +342,10 @@ export default function PerfilPage() {
     try {
       setAvatarUrl(DEFAULT_AVATAR_URL);
       setIsUploadingPhoto(true);
+
+      await clearPersistedPassengerAvatar(profile?.id || user?.id, profile?.email || user?.email);
       await updateProfile({ avatar_url: DEFAULT_AVATAR_URL });
+
       setIsAvatarModalOpen(false);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);
@@ -335,17 +359,30 @@ export default function PerfilPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
-    await updateProfile({
-      name,
-      phone,
-      company,
-      department,
-      payment_preference: paymentPreference,
-      avatar_url: avatarUrl
-    });
-    setIsSaving(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      if (avatarUrl) {
+        await persistPassengerAvatar({
+          userId: profile?.id || user?.id,
+          email: profile?.email || user?.email,
+          avatarUrl: avatarUrl
+        });
+      }
+
+      await updateProfile({
+        name,
+        phone,
+        company,
+        department,
+        payment_preference: paymentPreference,
+        avatar_url: avatarUrl
+      });
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (err) {
+      console.error('Erro ao salvar perfil:', err);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
@@ -428,7 +465,7 @@ export default function PerfilPage() {
                   onClick={() => setIsPendingModalOpen(true)}
                   className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300 border border-amber-500/40 px-2.5 py-0.5 text-[10px] font-bold"
                 >
-                  <Clock size={10} /> Pendente de Aprovação
+                  <Clock size={10} /> Aguardando aprovação
                 </button>
               )}
               <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-dark-700 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
@@ -503,9 +540,14 @@ export default function PerfilPage() {
         </div>
 
         {savedSuccess && (
-          <div className="flex items-center gap-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs text-emerald-600 dark:text-emerald-400 font-bold animate-in fade-in">
-            <CheckCircle2 size={16} />
-            <span>Perfil e dados atualizados com sucesso!</span>
+          <div className="flex flex-col gap-1.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3.5 text-xs text-amber-900 dark:text-amber-200 font-medium animate-in fade-in">
+            <div className="flex items-center gap-2 font-black text-amber-700 dark:text-amber-300">
+              <Clock size={16} />
+              <span>Status: Aguardando aprovação</span>
+            </div>
+            <p className="text-[11px] text-slate-600 dark:text-slate-300">
+              Sua foto, dados de perfil e vínculo empresarial foram salvos e enviados para homologação pelo administrador.
+            </p>
           </div>
         )}
 

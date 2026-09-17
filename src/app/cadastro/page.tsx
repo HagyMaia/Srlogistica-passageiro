@@ -315,7 +315,7 @@ export default function CadastroPage() {
 
           <div>
             <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-xs font-bold mb-2">
-              Aguardando Aprovação no Painel Admin
+              Aguardando aprovação
             </Badge>
             <h1 className="text-2xl font-black text-slate-900 dark:text-white">
               Solicitação Enviada!
@@ -339,7 +339,7 @@ export default function CadastroPage() {
             )}
             <div className="flex justify-between">
               <span className="text-slate-400">Status:</span>
-              <span className="font-bold text-amber-600 dark:text-amber-400">Pendente de Validação</span>
+              <span className="font-bold text-amber-600 dark:text-amber-400">Aguardando aprovação</span>
             </div>
           </div>
 
