@@ -229,6 +229,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userMeta.setor || 
         '';
 
+      const cpfVal = passData?.cpf || profData?.cpf || userMeta.cpf || '';
+      const matriculaVal = passData?.matricula || profData?.matricula || profData?.employee_registration || userMeta.matricula || '';
+      const turnoVal = passData?.turno || profData?.turno || profData?.shift || userMeta.turno || '';
+      const enderecoVal = passData?.endereco || profData?.endereco || profData?.pickup_address || userMeta.endereco || '';
+
       const roleVal = profData?.role || appMeta.role || userMeta.role || 'passenger';
       const prefVal = (profData?.payment_preference || userMeta.payment_preference || 'VOUCHER') as 'PIX' | 'VOUCHER';
 
@@ -237,6 +242,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         name: nameVal,
         email: currentUser.email || '',
         phone: phoneVal,
+        cpf: cpfVal || undefined,
+        employee_registration: matriculaVal || undefined,
+        shift: turnoVal || undefined,
+        pickup_address: enderecoVal || undefined,
         role: roleVal,
         avatar_url: avatarVal,
         company: companyVal || undefined,
@@ -458,7 +467,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (updates.company !== undefined && updates.company !== currentProf.company) ||
       (updates.department !== undefined && updates.department !== currentProf.department) ||
       (updates.name !== undefined && updates.name !== currentProf.name) ||
-      (updates.phone !== undefined && updates.phone !== currentProf.phone);
+      (updates.phone !== undefined && updates.phone !== currentProf.phone) ||
+      (updates.cpf !== undefined && updates.cpf !== currentProf.cpf) ||
+      (updates.employee_registration !== undefined && updates.employee_registration !== currentProf.employee_registration) ||
+      (updates.shift !== undefined && updates.shift !== currentProf.shift) ||
+      (updates.pickup_address !== undefined && updates.pickup_address !== currentProf.pickup_address);
 
     const nextStatus = updates.status !== undefined
       ? updates.status
@@ -522,6 +535,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nome: next.name,
               phone: next.phone,
               telefone: next.phone,
+              cpf: next.cpf,
+              matricula: next.employee_registration,
+              turno: next.shift,
+              endereco: next.pickup_address,
               avatar_url: compactCloudAvatar,
               foto: compactCloudAvatar,
               avatar: compactCloudAvatar,
@@ -549,6 +566,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               nome: next.name,
               phone: next.phone,
               telefone: next.phone,
+              cpf: next.cpf,
               role: next.role || 'passenger',
               status: next.status,
               is_approved: next.is_approved
@@ -565,9 +583,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             nome_completo: next.name,
             telefone: next.phone,
             email: activeUserEmail,
+            cpf: next.cpf || null,
+            matricula: next.employee_registration || null,
+            turno: next.shift || null,
+            endereco: next.pickup_address || null,
             empresa: next.company || 'Passageiro Particular',
             setor: next.department || 'Operações / Geral',
-            origem: hasCompanyOrProfileChanges ? 'Atualização de Vínculo via App' : 'App Passageiro',
+            origem: hasCompanyOrProfileChanges ? 'Atualização de Perfil via App' : 'App Passageiro',
             status: passStatus,
             is_approved: next.is_approved,
             updated_at: new Date().toISOString()

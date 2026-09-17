@@ -88,9 +88,14 @@ const EXECUTIVE_AVATARS = [
 export default function PerfilPage() {
   const { user, profile, updateProfile, signOut } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(profile?.name || '');
   const [phone, setPhone] = useState(profile?.phone || '');
+  const [cpf, setCpf] = useState(profile?.cpf || '');
+  const [employeeRegistration, setEmployeeRegistration] = useState(profile?.employee_registration || '');
+  const [shift, setShift] = useState(profile?.shift || '');
+  const [pickupAddress, setPickupAddress] = useState(profile?.pickup_address || '');
   const [company, setCompany] = useState(profile?.company || 'SR Logística & Transporte');
   const [department, setDepartment] = useState(profile?.department || 'Operações e Gestão');
   const [paymentPreference, setPaymentPreference] = useState<'PIX' | 'VOUCHER'>(profile?.payment_preference || 'VOUCHER');
@@ -243,6 +248,10 @@ export default function PerfilPage() {
     if (profile) {
       if (profile.name) setName(profile.name);
       if (profile.phone) setPhone(profile.phone);
+      if (profile.cpf) setCpf(profile.cpf);
+      if (profile.employee_registration) setEmployeeRegistration(profile.employee_registration);
+      if (profile.shift) setShift(profile.shift);
+      if (profile.pickup_address) setPickupAddress(profile.pickup_address);
       if (profile.company) setCompany(profile.company);
       if (profile.department) setDepartment(profile.department);
       if (profile.payment_preference) setPaymentPreference(profile.payment_preference);
@@ -275,14 +284,16 @@ export default function PerfilPage() {
     }
   };
 
-  // Manipulador de Upload de Foto com corte quadrado 1:1, otimização e persistência
+  // Manipulador de Upload de Foto com corte quadrado 1:1, otimização e persistência nativa mobile
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!file.type.startsWith('image/')) {
+    const isImageType = !file.type || file.type.startsWith('image/') || /\.(jpe?g|png|webp|heic|heif|bmp|gif|avif)$/i.test(file.name);
+    if (!isImageType) {
       alert('Por favor, selecione um arquivo de imagem válido (JPG, PNG, WebP).');
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
       return;
     }
 
@@ -311,6 +322,7 @@ export default function PerfilPage() {
       alert('Não foi possível processar esta foto. Tente outra imagem.');
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
       setIsUploadingPhoto(false);
     }
   };
@@ -371,13 +383,17 @@ export default function PerfilPage() {
       await updateProfile({
         name,
         phone,
+        cpf,
+        employee_registration: employeeRegistration,
+        shift,
+        pickup_address: pickupAddress,
         company,
         department,
         payment_preference: paymentPreference,
         avatar_url: avatarUrl
       });
       setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+      setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err) {
       console.error('Erro ao salvar perfil:', err);
     } finally {
@@ -390,12 +406,22 @@ export default function PerfilPage() {
 
   return (
     <div className="flex flex-col min-h-dvh p-4 sm:p-5 space-y-4 pb-28 max-w-lg mx-auto w-full">
-      {/* Input de Arquivo Oculto para Troca de Foto */}
+      {/* Input de Arquivo Oculto para Galeria/Arquivos */}
       <input
         type="file"
         ref={fileInputRef}
         onChange={handleFileChange}
         accept="image/*"
+        className="hidden"
+      />
+
+      {/* Input de Arquivo Oculto para Câmera Direta do Celular */}
+      <input
+        type="file"
+        ref={cameraInputRef}
+        onChange={handleFileChange}
+        accept="image/*"
+        capture="user"
         className="hidden"
       />
 
@@ -551,32 +577,64 @@ export default function PerfilPage() {
           </div>
         )}
 
-        <div className="space-y-3">
-          <Field label="Nome Completo">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Seu nome completo"
-              required
-            />
-          </Field>
+        <div className="space-y-4">
+          {/* Seção 1: Dados Pessoais do Passageiro (Editáveis a Qualquer Momento) */}
+          <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/40 p-3.5">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-dark-700/60">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <User size={14} className="text-brand" /> Dados Pessoais
+              </span>
+              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                Editável a qualquer momento
+              </span>
+            </div>
 
-          <Field label="Telefone de Contato / WhatsApp">
-            <Input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="(92) 99999-9999"
-              required
-            />
-          </Field>
+            <Field label="Nome Completo">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Seu nome completo"
+                required
+              />
+            </Field>
 
-          {/* Seleção / Edição de Empresa Conveniada */}
-          <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 p-3.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <Field label="Telefone / WhatsApp">
+                <Input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="(92) 99999-9999"
+                  required
+                />
+              </Field>
+
+              <Field label="CPF (Documento Pessoal)">
+                <Input
+                  value={cpf}
+                  onChange={(e) => setCpf(e.target.value)}
+                  placeholder="000.000.000-00"
+                />
+              </Field>
+            </div>
+
+            <Field label="Endereço Residencial / Ponto de Embarque">
+              <Input
+                value={pickupAddress}
+                onChange={(e) => setPickupAddress(e.target.value)}
+                placeholder="Ex: Rua Aparecida, 15 - Adrianópolis"
+              />
+            </Field>
+          </div>
+
+          {/* Seção 2: Vínculo Corporativo & Operacional (Passa por Aprovação da Central) */}
+          <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 p-3.5">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-dark-700/60">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Building size={14} className="text-brand" /> Empresa Conveniada / Vínculo
               </span>
-              <span className="text-[10px] text-slate-400">PIM & Corporativo</span>
+              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                Requer aprovação
+              </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -608,24 +666,46 @@ export default function PerfilPage() {
               </div>
             </div>
 
-            <div className="pt-1">
-              <Field label="Setor / Departamento">
-                <Input
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="Ex: Operações, Qualidade, TI"
-                />
-              </Field>
-            </div>
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="sm:col-span-1">
+                <Field label="Setor / Departamento">
+                  <Input
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="Ex: Operações, TI"
+                  />
+                </Field>
+              </div>
 
-          <Field label="E-mail (Autenticado)">
-            <Input
-              disabled
-              value={profile?.email || ''}
-              className="opacity-70 bg-slate-100 dark:bg-dark-900/50 cursor-not-allowed font-medium"
-            />
-          </Field>
+              <div>
+                <Field label="Matrícula Funcional">
+                  <Input
+                    value={employeeRegistration}
+                    onChange={(e) => setEmployeeRegistration(e.target.value)}
+                    placeholder="Ex: MAT-12345"
+                  />
+                </Field>
+              </div>
+
+              <div>
+                <Field label="Turno de Trabalho">
+                  <Input
+                    value={shift}
+                    onChange={(e) => setShift(e.target.value)}
+                    placeholder="Ex: 1º Turno (06h-14h)"
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <Field label="E-mail (Autenticado)">
+              <Input
+                disabled
+                value={profile?.email || ''}
+                className="opacity-70 bg-slate-100 dark:bg-dark-900/50 cursor-not-allowed font-medium"
+              />
+            </Field>
+          </div>
         </div>
 
         {/* Botão Especial de Vínculo de Passageiros para Administrador */}
@@ -878,33 +958,47 @@ export default function PerfilPage() {
               </button>
             </div>
 
-            {/* Opções de Upload Direto */}
-            <div className="grid grid-cols-2 gap-2.5">
+            {/* Opções de Upload Direto (Câmera & Galeria) */}
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => cameraInputRef.current?.click()}
+                className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border-2 border-dashed border-brand/50 bg-brand/10 hover:bg-brand/20 transition-all text-center"
+              >
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-dark-950 font-bold shadow-sm">
+                  <Camera size={16} />
+                </div>
+                <div>
+                  <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 block">Tirar Foto</span>
+                  <span className="text-[9px] text-slate-400">Câmera Celular</span>
+                </div>
+              </button>
+
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border-2 border-dashed border-brand/40 bg-brand/5 hover:bg-brand/10 transition-all text-center"
+                className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/60 hover:bg-slate-100 dark:hover:bg-dark-700 transition-all text-center"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-dark-950 font-bold shadow-md">
-                  <Upload size={18} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 dark:bg-dark-700 text-slate-700 dark:text-slate-200 font-bold shadow-sm">
+                  <Upload size={16} />
                 </div>
                 <div>
-                  <span className="text-xs font-black text-slate-800 dark:text-slate-100 block">Enviar do Celular/PC</span>
-                  <span className="text-[10px] text-slate-400">JPG, PNG ou WebP</span>
+                  <span className="text-[11px] font-black text-slate-800 dark:text-slate-100 block">Galeria / PC</span>
+                  <span className="text-[9px] text-slate-400">JPG, PNG, WebP</span>
                 </div>
               </button>
 
               <button
                 type="button"
                 onClick={handleRemovePhoto}
-                className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 hover:bg-red-500/10 hover:border-red-500/30 transition-all text-center group"
+                className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 hover:bg-red-500/10 hover:border-red-500/30 transition-all text-center group"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200 dark:bg-dark-700 text-slate-600 dark:text-slate-300 group-hover:bg-red-500 group-hover:text-white transition-colors">
-                  <Trash2 size={18} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-200 dark:bg-dark-700 text-slate-600 dark:text-slate-300 group-hover:bg-red-500 group-hover:text-white transition-colors">
+                  <Trash2 size={16} />
                 </div>
                 <div>
-                  <span className="text-xs font-bold text-slate-700 dark:text-slate-300 group-hover:text-red-500 block">Remover Foto</span>
-                  <span className="text-[10px] text-slate-400">Restaurar padrão</span>
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 group-hover:text-red-500 block">Remover</span>
+                  <span className="text-[9px] text-slate-400">Restaurar</span>
                 </div>
               </button>
             </div>

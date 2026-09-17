@@ -163,6 +163,17 @@ export async function optimizeAvatarImage(
       const img = new Image();
       img.crossOrigin = 'anonymous';
 
+      let blobUrl: string | null = null;
+
+      const cleanUp = () => {
+        if (blobUrl) {
+          try {
+            URL.revokeObjectURL(blobUrl);
+          } catch (_) {}
+          blobUrl = null;
+        }
+      };
+
       const handleImageLoad = () => {
         try {
           const canvas = document.createElement('canvas');
@@ -171,6 +182,7 @@ export async function optimizeAvatarImage(
           const ctx = canvas.getContext('2d');
 
           if (!ctx) {
+            cleanUp();
             reject(new Error('Falha ao inicializar contexto Canvas'));
             return;
           }
@@ -178,8 +190,8 @@ export async function optimizeAvatarImage(
           ctx.imageSmoothingEnabled = true;
           ctx.imageSmoothingQuality = 'high';
 
-          const originalWidth = img.naturalWidth || img.width;
-          const originalHeight = img.naturalHeight || img.height;
+          const originalWidth = img.naturalWidth || img.width || targetSize;
+          const originalHeight = img.naturalHeight || img.height || targetSize;
 
           let sourceX = 0;
           let sourceY = 0;
@@ -204,24 +216,62 @@ export async function optimizeAvatarImage(
           );
 
           const resultBase64 = canvas.toDataURL('image/jpeg', quality);
+          cleanUp();
           resolve(resultBase64);
         } catch (err) {
+          cleanUp();
           reject(err);
         }
       };
 
       img.onload = handleImageLoad;
-      img.onerror = () => reject(new Error('Erro ao carregar a imagem'));
+      img.onerror = () => {
+        cleanUp();
+        if (typeof fileOrDataUrl !== 'string') {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const fallbackImg = new Image();
+            fallbackImg.crossOrigin = 'anonymous';
+            fallbackImg.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = targetSize;
+                canvas.height = targetSize;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                  reject(new Error('Falha no canvas'));
+                  return;
+                }
+                ctx.drawImage(fallbackImg, 0, 0, targetSize, targetSize);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+              } catch (e) {
+                reject(e);
+              }
+            };
+            fallbackImg.onerror = () => reject(new Error('Erro ao processar imagem no celular'));
+            fallbackImg.src = event.target?.result as string;
+          };
+          reader.onerror = () => reject(new Error('Erro ao ler arquivo da câmera'));
+          reader.readAsDataURL(fileOrDataUrl);
+        } else {
+          reject(new Error('Erro ao carregar imagem'));
+        }
+      };
 
       if (typeof fileOrDataUrl === 'string') {
         img.src = fileOrDataUrl;
       } else {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          img.src = event.target?.result as string;
-        };
-        reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
-        reader.readAsDataURL(fileOrDataUrl);
+        try {
+          blobUrl = URL.createObjectURL(fileOrDataUrl);
+          img.src = blobUrl;
+        } catch (_) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            img.src = event.target?.result as string;
+          };
+          reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
+          reader.readAsDataURL(fileOrDataUrl);
+        }
       }
     } catch (err) {
       reject(err);
