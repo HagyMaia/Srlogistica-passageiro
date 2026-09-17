@@ -4,14 +4,11 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  Navigation,
   ArrowRight,
   Smartphone,
-  Download,
-  Zap
+  Download
 } from 'lucide-react';
 import { Button } from '@/components/ui';
-import { useAuth } from '@/lib/auth';
 
 export default function WelcomePage() {
   const router = useRouter();
@@ -57,11 +54,8 @@ export default function WelcomePage() {
 
       {/* Topo / Header Minimalista */}
       <header className="relative z-10 flex items-center justify-between p-6">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-brand-600 to-amber-300 text-dark-950 font-black shadow-lg shadow-brand/30">
-            <Navigation size={20} />
-          </div>
-          <span className="text-sm font-black tracking-wider uppercase text-white">
+        <div className="flex items-center">
+          <span className="text-base font-black tracking-wider uppercase text-white">
             SR Logística
           </span>
         </div>

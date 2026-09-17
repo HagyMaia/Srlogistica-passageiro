@@ -6,6 +6,7 @@ import type { LocationCoordinates, DriverInfo } from '@/types';
 export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
+  liveGpsCoords?: { latitude: number; longitude: number; accuracy?: number | null } | null;
   routeCoordinates?: Array<[number, number]>;
   pickupRouteCoordinates?: Array<[number, number]>;
   tripStatus?: string;
@@ -20,6 +21,7 @@ export interface PassengerMapProps {
   isDestinationDraggable?: boolean;
   pinLabel?: string;
   focusRouteTrigger?: number;
+  autoFollowOrigin?: boolean;
   className?: string;
 }
 

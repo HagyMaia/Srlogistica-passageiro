@@ -281,6 +281,46 @@ export function createMockSupabase() {
         };
       },
 
+      async updateUser(attributes: { data?: Record<string, any> }) {
+        const session = readDemoSession();
+        if (!session?.user) {
+          return { data: { user: null }, error: new Error('Usuário não autenticado') };
+        }
+
+        const updatedUser: DemoUser = {
+          ...session.user,
+          user_metadata: {
+            ...(session.user.user_metadata || {}),
+            ...(attributes.data || {}),
+          },
+        };
+
+        const updatedSession: DemoSession = {
+          ...session,
+          user: updatedUser,
+        };
+
+        writeStorage(DEMO_SESSION_KEY, updatedSession);
+
+        // Atualiza profiles em mock
+        const profiles = loadTableData('profiles');
+        const nextProfiles = profiles.map((p) => {
+          if (p.id === updatedUser.id || p.email === updatedUser.email) {
+            return {
+              ...p,
+              ...(attributes.data || {}),
+            };
+          }
+          return p;
+        });
+        setMockTableData('profiles', nextProfiles);
+
+        return {
+          data: { user: updatedUser },
+          error: null,
+        };
+      },
+
       async resetPasswordForEmail(email: string) {
         return {
           data: { user: null },

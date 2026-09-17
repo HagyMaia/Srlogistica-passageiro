@@ -48,7 +48,7 @@ import { usePassengerLocation } from '@/hooks/usePassengerLocation';
 import { usePassengerTripStore } from '@/features/trips/store/usePassengerTripStore';
 import { useRideStatus } from '@/hooks/useRideStatus';
 import { useOnlineDrivers } from '@/hooks/useOnlineDrivers';
-import { searchPlaces, reverseGeocode, PlaceSuggestion } from '@/services/geocoding';
+import { searchPlaces, reverseGeocode, cleanHouseNumber, PlaceSuggestion } from '@/services/geocoding';
 import { calculateRoute, haversineDistance } from '@/services/routing';
 import { getAvailableCategories, calculateFare } from '@/features/trips/domain/pricing';
 import { formatCurrency, formatDistance, formatDuration, formatDateTime } from '@/lib/utils';
@@ -72,65 +72,65 @@ function getDefaultScheduleTime(): { date: string; time: string } {
 const FAVORITE_DESTINATIONS = [
   {
     title: 'Manauara Shopping',
-    subtitle: 'Av. Mário Ypiranga, Nº 1300 - Adrianópolis',
+    subtitle: 'Av. Mário Ypiranga, 1300 - Adrianópolis',
     coords: {
       latitude: -3.1037,
       longitude: -60.0125,
       street: 'Av. Mário Ypiranga',
       number: '1300',
-      address: 'Manauara Shopping (Av. Mário Ypiranga, Nº 1300)',
+      address: 'Manauara Shopping, 1300',
       neighborhood: 'Adrianópolis',
       city: 'Manaus'
     }
   },
   {
     title: 'Aeroporto Eduardo Gomes',
-    subtitle: 'Av. Santos Dumont, Nº 1350 - Tarumã',
+    subtitle: 'Av. Santos Dumont, 1350 - Tarumã',
     coords: {
       latitude: -3.0386,
       longitude: -60.0497,
       street: 'Av. Santos Dumont',
       number: '1350',
-      address: 'Aeroporto Internacional Eduardo Gomes (Av. Santos Dumont, Nº 1350)',
+      address: 'Aeroporto Internacional Eduardo Gomes, 1350',
       neighborhood: 'Tarumã',
       city: 'Manaus'
     }
   },
   {
     title: 'Amazonas Shopping',
-    subtitle: 'Av. Djalma Batista, Nº 482 - Parque 10',
+    subtitle: 'Av. Djalma Batista, 482 - Parque 10',
     coords: {
       latitude: -3.0964,
       longitude: -60.0238,
       street: 'Av. Djalma Batista',
       number: '482',
-      address: 'Amazonas Shopping (Av. Djalma Batista, Nº 482)',
+      address: 'Amazonas Shopping, 482',
       neighborhood: 'Parque 10 de Novembro',
       city: 'Manaus'
     }
   },
   {
     title: 'Shopping Ponta Negra',
-    subtitle: 'Av. Coronel Teixeira, Nº 5705 - Ponta Negra',
+    subtitle: 'Av. Coronel Teixeira, 5705 - Ponta Negra',
     coords: {
       latitude: -3.0768,
       longitude: -60.0817,
       street: 'Av. Coronel Teixeira',
       number: '5705',
-      address: 'Shopping Ponta Negra (Av. Coronel Teixeira, Nº 5705)',
+      address: 'Shopping Ponta Negra, 5705',
       neighborhood: 'Ponta Negra',
       city: 'Manaus'
     }
   },
   {
     title: 'Sumaúma Park Shopping',
-    subtitle: 'Av. Noel Nutels, Nº 1762 - Cidade Nova',
+    subtitle: 'Av. Noel Nutels, 1762 - Cidade Nova',
     coords: {
       latitude: -3.0335,
       longitude: -59.9774,
       street: 'Av. Noel Nutels',
       number: '1762',
-      address: 'Sumaúma Park Shopping (Av. Noel Nutels, Nº 1762)',
+      address: 'Sumaúma Park Shopping, 1762',
       neighborhood: 'Cidade Nova',
       city: 'Manaus'
     }
@@ -142,6 +142,7 @@ export default function HomePage() {
   const router = useRouter();
   const {
     location,
+    liveCoords,
     hasRealGPS,
     accuracy,
     loading: gpsLoading,
@@ -360,7 +361,7 @@ export default function HomePage() {
     setEditingAddressTarget(target);
 
     const rawAddress = loc?.address || '';
-    const extractedNum = loc?.number || rawAddress.match(/Nº\s*([0-9a-zA-Z-]+)/i)?.[1] || '';
+    const extractedNum = loc?.number || cleanHouseNumber(rawAddress.match(/(?:,\s*|n[º°.]?\s*)(\d{1,5}\s*[a-zA-Z]?)/i)?.[1]) || '';
     
     let streetName = loc?.street || '';
     if (!streetName) {
@@ -379,13 +380,13 @@ export default function HomePage() {
     setCustomNeighborhoodInput(loc?.neighborhood || 'Manaus');
   };
 
-  // Salvar ajuste manual de endereço com Rua e Número
+  // Salvar ajuste manual de endereço com Rua e Número (Exemplo: "Rua Aparecida, 15")
   const handleSaveCustomAddress = async () => {
     if (!editingAddressTarget) return;
 
     const street = customStreetInput.trim() || (editingAddressTarget === 'ORIGIN' ? 'Ponto de Embarque' : 'Ponto de Destino');
     const rawNum = customNumberInput.trim();
-    const cleanNum = rawNum ? (rawNum.toLowerCase().startsWith('nº') || rawNum.toLowerCase() === 's/n' ? rawNum : `Nº ${rawNum}`) : 's/n';
+    const cleanNum = cleanHouseNumber(rawNum) || (rawNum ? rawNum : 's/n');
     const complement = customComplementInput.trim();
     const neighborhood = customNeighborhoodInput.trim() || 'Manaus';
 
@@ -397,7 +398,7 @@ export default function HomePage() {
         latitude: origin?.latitude || location?.latitude || -3.1037,
         longitude: origin?.longitude || location?.longitude || -60.0125,
         street,
-        number: rawNum || 's/n',
+        number: cleanNum,
         address: fullAddress,
         neighborhood,
         city: origin?.city || location?.city || 'Manaus'
@@ -411,13 +412,13 @@ export default function HomePage() {
         await updateRouteCalculation(updatedOrigin, destination);
       }
 
-      setGpsToastMsg('📍 Endereço e número de embarque confirmados!');
+      setGpsToastMsg(`📍 Embarque confirmado: ${fullAddress}`);
     } else {
       const updatedDest: LocationCoordinates = {
         latitude: destination?.latitude || -3.0975,
         longitude: destination?.longitude || -60.0238,
         street,
-        number: rawNum || 's/n',
+        number: cleanNum,
         address: fullAddress,
         neighborhood,
         city: destination?.city || 'Manaus'
@@ -431,13 +432,13 @@ export default function HomePage() {
         await updateRouteCalculation(currentOrigin, updatedDest);
       }
 
-      setGpsToastMsg('🏁 Endereço e número de destino confirmados!');
+      setGpsToastMsg(`🏁 Destino confirmado: ${fullAddress}`);
     }
 
     setTimeout(() => setGpsToastMsg(null), 3000);
   };
 
-  // Recentralizar GPS em tempo real
+  // Recentralizar GPS em tempo real e reativar sincronização contínua
   const handleRecenterGPS = () => {
     setIsCustomOrigin(false);
     refreshLocation();
@@ -448,11 +449,11 @@ export default function HomePage() {
         updateRouteCalculation(location, destination);
       }
       setGpsToastMsg(
-        accuracy ? `📍 GPS ativo (precisão ±${accuracy}m)` : '📍 GPS sincronizado em tempo real'
+        accuracy ? `📍 GPS ativo em tempo real (precisão ±${accuracy}m)` : '📍 GPS sincronizado em tempo real'
       );
       setTimeout(() => setGpsToastMsg(null), 3500);
     } else {
-      setGpsToastMsg('📍 Buscando sinal do GPS do seu aparelho...');
+      setGpsToastMsg('📍 Sintonizando sinal do GPS do seu aparelho...');
       setTimeout(() => setGpsToastMsg(null), 3000);
     }
   };
@@ -766,6 +767,7 @@ export default function HomePage() {
         <PassengerMapWrapper
           origin={currentTrip?.origin || origin || location}
           destination={currentTrip?.destination || destination}
+          liveGpsCoords={isCustomOrigin ? liveCoords : null}
           routeCoordinates={
             currentTrip?.routeCoordinates && currentTrip.routeCoordinates.length > 0
               ? currentTrip.routeCoordinates
@@ -780,6 +782,7 @@ export default function HomePage() {
           driver={currentTrip?.driver}
           nearbyDrivers={onlineDrivers}
           accuracy={accuracy}
+          autoFollowOrigin={!isCustomOrigin}
           onMapClick={handleOriginPinMoved}
           onOriginDragEnd={handleOriginPinMoved}
           onDestinationDragEnd={handleDestinationPinMoved}
@@ -803,6 +806,9 @@ export default function HomePage() {
               <img
                 src={profile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'}
                 alt="Avatar"
+                onError={(e) => {
+                  e.currentTarget.src = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80';
+                }}
                 className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
               />
               <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-dark-900" />

@@ -37,6 +37,11 @@ import { PendingApprovalModal } from '@/components/PendingApprovalModal';
 import { SR_SUPPORT_CONFIG } from '@/types';
 import { supabase } from '@/lib/supabase';
 import {
+  optimizeAvatarImage,
+  DEFAULT_AVATAR_URL,
+  getInstantSyncPassengerAvatar
+} from '@/lib/avatar-storage';
+import {
   isBiometricsSupported,
   isBiometricsEnrolled,
   enrollBiometrics,
@@ -87,9 +92,9 @@ export default function PerfilPage() {
   const [company, setCompany] = useState(profile?.company || 'SR Logística & Transporte');
   const [department, setDepartment] = useState(profile?.department || 'Operações e Gestão');
   const [paymentPreference, setPaymentPreference] = useState<'PIX' | 'VOUCHER'>(profile?.payment_preference || 'PIX');
-  const [avatarUrl, setAvatarUrl] = useState<string>(
-    profile?.avatar_url || EXECUTIVE_AVATARS[0].url
-  );
+  const [avatarUrl, setAvatarUrl] = useState<string>(() => {
+    return profile?.avatar_url || getInstantSyncPassengerAvatar(profile?.id, profile?.email) || DEFAULT_AVATAR_URL;
+  });
 
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -268,7 +273,7 @@ export default function PerfilPage() {
     }
   };
 
-  // Manipulador de Upload de Foto com compressão automática via Canvas
+  // Manipulador de Upload de Foto com corte quadrado 1:1 e compressão automática
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -282,69 +287,49 @@ export default function PerfilPage() {
     setIsUploadingPhoto(true);
 
     try {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = async () => {
-          const canvas = document.createElement('canvas');
-          const MAX_SIZE = 350;
-          let width = img.width;
-          let height = img.height;
-
-          if (width > height) {
-            if (width > MAX_SIZE) {
-              height = Math.round((height * MAX_SIZE) / width);
-              width = MAX_SIZE;
-            }
-          } else {
-            if (height > MAX_SIZE) {
-              width = Math.round((width * MAX_SIZE) / height);
-              height = MAX_SIZE;
-            }
-          }
-
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const optimizedBase64 = canvas.toDataURL('image/jpeg', 0.82);
-            setAvatarUrl(optimizedBase64);
-            await updateProfile({ avatar_url: optimizedBase64 });
-            setIsAvatarModalOpen(false);
-            setSavedSuccess(true);
-            setTimeout(() => setSavedSuccess(false), 2500);
-          }
-          if (fileInputRef.current) fileInputRef.current.value = '';
-          setIsUploadingPhoto(false);
-        };
-      };
-      reader.readAsDataURL(file);
+      const optimizedBase64 = await optimizeAvatarImage(file, 360, 0.85);
+      setAvatarUrl(optimizedBase64);
+      await updateProfile({ avatar_url: optimizedBase64 });
+      setIsAvatarModalOpen(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
     } catch (err) {
       console.error('Erro ao processar imagem:', err);
+      alert('Não foi possível processar esta foto. Tente outra imagem.');
+    } finally {
       if (fileInputRef.current) fileInputRef.current.value = '';
       setIsUploadingPhoto(false);
     }
   };
 
   const handleSelectPresetAvatar = async (url: string) => {
-    setAvatarUrl(url);
-    setIsUploadingPhoto(true);
-    await updateProfile({ avatar_url: url });
-    setIsUploadingPhoto(false);
-    setIsAvatarModalOpen(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      setAvatarUrl(url);
+      setIsUploadingPhoto(true);
+      await updateProfile({ avatar_url: url });
+      setIsAvatarModalOpen(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (err) {
+      console.error('Erro ao definir avatar:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleRemovePhoto = async () => {
-    const defaultUrl = 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
-    setAvatarUrl(defaultUrl);
-    await updateProfile({ avatar_url: defaultUrl });
-    setIsAvatarModalOpen(false);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      setAvatarUrl(DEFAULT_AVATAR_URL);
+      setIsUploadingPhoto(true);
+      await updateProfile({ avatar_url: DEFAULT_AVATAR_URL });
+      setIsAvatarModalOpen(false);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (err) {
+      console.error('Erro ao restaurar avatar padrão:', err);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -398,8 +383,11 @@ export default function PerfilPage() {
           {/* Avatar com Botão de Câmera */}
           <div className="relative group">
             <img
-              src={avatarUrl || profile?.avatar_url || EXECUTIVE_AVATARS[0].url}
+              src={avatarUrl || profile?.avatar_url || DEFAULT_AVATAR_URL}
               alt="Avatar do Usuário"
+              onError={(e) => {
+                e.currentTarget.src = DEFAULT_AVATAR_URL;
+              }}
               className="h-20 w-20 rounded-3xl object-cover border-2 border-brand shadow-md shadow-brand/10 transition-transform duration-200 group-hover:scale-105"
             />
             <button

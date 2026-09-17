@@ -3,6 +3,12 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import type { PassengerProfile } from '@/types';
+import {
+  persistPassengerAvatar,
+  getPersistedPassengerAvatar,
+  getInstantSyncPassengerAvatar,
+  DEFAULT_AVATAR_URL
+} from '@/lib/avatar-storage';
 
 interface AuthContextType {
   user: any | null;
@@ -20,7 +26,7 @@ const DEFAULT_PROFILE: PassengerProfile = {
   email: '',
   phone: '',
   role: 'passenger',
-  avatar_url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80',
+  avatar_url: DEFAULT_AVATAR_URL,
   rating: 5.0,
   total_rides: 0,
   payment_preference: 'PIX',
@@ -39,9 +45,35 @@ const AuthContext = createContext<AuthContextType>({
   loginAsGuest: async () => {}
 });
 
+function getInitialCachedSession(): { user: any | null; profile: PassengerProfile | null } {
+  if (typeof window === 'undefined') return { user: null, profile: null };
+  try {
+    const raw = localStorage.getItem('sr_passenger_active_session');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (
+        parsed?.user &&
+        parsed?.user?.id !== 'passenger-demo-user' &&
+        parsed?.user?.id !== 'passenger-active-user' &&
+        parsed?.user?.email !== 'passageiro@srlogistica.com.br' &&
+        parsed?.profile?.name !== 'Passageiro SR'
+      ) {
+        // Encontra o avatar mais recente do cache
+        const instantAvatar = getInstantSyncPassengerAvatar(parsed.user.id, parsed.user.email);
+        const mergedProfile = parsed.profile
+          ? { ...parsed.profile, avatar_url: instantAvatar || parsed.profile.avatar_url || DEFAULT_AVATAR_URL }
+          : null;
+        return { user: parsed.user, profile: mergedProfile };
+      }
+    }
+  } catch (_) {}
+  return { user: null, profile: null };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<any | null>(null);
-  const [profile, setProfile] = useState<PassengerProfile | null>(null);
+  const initialCache = getInitialCachedSession();
+  const [user, setUser] = useState<any | null>(initialCache.user);
+  const [profile, setProfile] = useState<PassengerProfile | null>(initialCache.profile);
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = async (currentUser: any) => {
@@ -119,21 +151,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userMeta.telefone || 
         '';
 
-      const cachedAvatar = typeof window !== 'undefined' ? localStorage.getItem(`sr-passenger-avatar-${currentUser.id}`) : null;
+      // Resolução inteligente e prioritária da imagem de perfil:
+      // 1. userMeta (Auth Metadata na Nuvem)
+      // 2. profData / passData
+      // 3. Persistência local (IndexedDB + LocalStorage)
+      // 4. Default avatar
+      const metaAvatar = userMeta.avatar_url || userMeta.foto || userMeta.avatar;
+      const dbAvatar = profData?.avatar_url || profData?.avatar || profData?.foto || profData?.foto_url || passData?.avatar_url || passData?.foto || passData?.foto_url;
+      const persistedAvatar = await getPersistedPassengerAvatar(currentUser.id, currentUser.email);
+      const instantAvatar = getInstantSyncPassengerAvatar(currentUser.id, currentUser.email);
 
-      const avatarVal = 
-        profData?.avatar_url || 
-        profData?.avatar || 
-        profData?.foto || 
-        profData?.foto_url || 
-        passData?.avatar_url || 
-        passData?.foto || 
-        passData?.foto_url || 
-        userMeta.avatar_url || 
-        userMeta.foto || 
-        userMeta.avatar || 
-        cachedAvatar || 
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300&auto=format&fit=crop&q=80';
+      const avatarVal =
+        metaAvatar ||
+        dbAvatar ||
+        persistedAvatar ||
+        instantAvatar ||
+        DEFAULT_AVATAR_URL;
+
+      // Fixa o avatar resolvido no cache local para carregamento instantâneo permanente
+      if (avatarVal && avatarVal !== DEFAULT_AVATAR_URL) {
+        await persistPassengerAvatar({
+          userId: currentUser.id,
+          email: currentUser.email,
+          avatarUrl: avatarVal
+        });
+      }
 
       const companyVal = 
         profData?.company || 
@@ -175,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (_) {}
       }
 
-      setProfile({
+      const finalProfile: PassengerProfile = {
         id: currentUser.id,
         name: nameVal,
         email: currentUser.email,
@@ -190,13 +232,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         status: statusVal,
         is_approved: isApproved,
         created_at: profData?.created_at || passData?.created_at || new Date().toISOString()
-      });
+      };
+
+      setProfile(finalProfile);
+
+      // Salva sessão local ativa completa para reaberturas instantâneas do app / APK
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            'sr_passenger_active_session',
+            JSON.stringify({ user: currentUser, profile: finalProfile })
+          );
+        } catch (_) {}
+      }
     } catch {
-      setProfile({
+      const fallbackInstantAvatar = getInstantSyncPassengerAvatar(currentUser.id, currentUser.email) || DEFAULT_AVATAR_URL;
+      const fallbackProf = {
         ...DEFAULT_PROFILE,
         id: currentUser.id,
-        email: currentUser.email
-      });
+        email: currentUser.email,
+        avatar_url: fallbackInstantAvatar
+      };
+      setProfile(fallbackProf);
     }
   };
 
@@ -232,8 +289,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (savedLocalSession?.user) {
+              const instantAvatar = getInstantSyncPassengerAvatar(savedLocalSession.user.id, savedLocalSession.user.email);
+              const restoredProfile = {
+                ...(savedLocalSession.profile || DEFAULT_PROFILE),
+                avatar_url: instantAvatar || savedLocalSession.profile?.avatar_url || DEFAULT_AVATAR_URL
+              };
               setUser(savedLocalSession.user);
-              setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+              setProfile(restoredProfile);
             } else {
               setUser(null);
               setProfile(null);
@@ -263,8 +325,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           if (savedLocalSession?.user) {
+            const instantAvatar = getInstantSyncPassengerAvatar(savedLocalSession.user.id, savedLocalSession.user.email);
+            const restoredProfile = {
+              ...(savedLocalSession.profile || DEFAULT_PROFILE),
+              avatar_url: instantAvatar || savedLocalSession.profile?.avatar_url || DEFAULT_AVATAR_URL
+            };
             setUser(savedLocalSession.user);
-            setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+            setProfile(restoredProfile);
           } else {
             setUser(null);
             setProfile(null);
@@ -282,7 +349,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session.user);
         await fetchProfile(session.user);
       } else {
-        // Se deslogou no supabase mas tem sessão local salva
         let savedLocalSession: any = null;
         if (typeof window !== 'undefined') {
           try {
@@ -303,8 +369,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (savedLocalSession?.user) {
+          const instantAvatar = getInstantSyncPassengerAvatar(savedLocalSession.user.id, savedLocalSession.user.email);
+          const restoredProfile = {
+            ...(savedLocalSession.profile || DEFAULT_PROFILE),
+            avatar_url: instantAvatar || savedLocalSession.profile?.avatar_url || DEFAULT_AVATAR_URL
+          };
           setUser(savedLocalSession.user);
-          setProfile(savedLocalSession.profile || DEFAULT_PROFILE);
+          setProfile(restoredProfile);
         } else {
           setUser(null);
           setProfile(null);
@@ -336,7 +407,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginAsGuest = async (_custom?: Partial<PassengerProfile>) => {
-    // Opção de entrar direto como convidado mock desativada - o app requer autenticação real
     if (typeof window !== 'undefined') {
       try {
         localStorage.removeItem('sr_passenger_active_session');
@@ -365,23 +435,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProfile = async (updates: Partial<PassengerProfile>) => {
-    if (!profile) return;
-    const next = { ...profile, ...updates };
+    const currentProf = profile || DEFAULT_PROFILE;
+    const next = { ...currentProf, ...updates };
     setProfile(next);
 
-    // Salva cópia local para carregamento instantâneo
-    if (typeof window !== 'undefined' && user?.id) {
+    const activeUserId = user?.id || next.id;
+    const activeUserEmail = user?.email || next.email;
+
+    // 1. Salva a imagem de perfil no armazenamento multicamadas (IndexedDB + LocalStorage)
+    if (next.avatar_url) {
+      await persistPassengerAvatar({
+        userId: activeUserId,
+        email: activeUserEmail,
+        avatarUrl: next.avatar_url
+      });
+    }
+
+    // 2. Salva cópia local da sessão completa para carregamento instantâneo offline/ao reabrir
+    if (typeof window !== 'undefined') {
       try {
-        if (next.avatar_url) {
-          localStorage.setItem(`sr-passenger-avatar-${user.id}`, next.avatar_url);
+        localStorage.setItem(
+          'sr_passenger_active_session',
+          JSON.stringify({ user: user || { id: activeUserId, email: activeUserEmail }, profile: next })
+        );
+        if (activeUserId) {
+          localStorage.setItem(`sr-passenger-profile-${activeUserId}`, JSON.stringify(next));
         }
-        localStorage.setItem(`sr-passenger-profile-${user.id}`, JSON.stringify(next));
       } catch (_) {}
     }
 
     try {
-      if (isSupabaseConfigured && user) {
-        // 1. Atualiza nos metadados do Auth do Supabase (sempre persistente)
+      if (isSupabaseConfigured && (user || activeUserId)) {
+        // 3. Atualiza nos metadados do Auth do Supabase (armazenamento persistente em nuvem)
         try {
           await supabase.auth.updateUser({
             data: {
@@ -391,6 +476,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               telefone: next.phone,
               avatar_url: next.avatar_url,
               foto: next.avatar_url,
+              avatar: next.avatar_url,
               company: next.company,
               empresa: next.company,
               department: next.department,
@@ -398,15 +484,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               payment_preference: next.payment_preference
             }
           });
-        } catch (_) {}
+        } catch (e) {
+          console.warn('Aviso ao atualizar metadados do Auth:', e);
+        }
 
-        // 2. Atualiza ou insere na tabela profiles (apenas colunas existentes)
+        // 4. Atualiza ou insere na tabela profiles
         try {
           await supabase
             .from('profiles')
             .upsert({
-              id: user.id,
-              email: user.email,
+              id: activeUserId,
+              email: activeUserEmail,
               name: next.name,
               nome: next.name,
               phone: next.phone,
@@ -417,7 +505,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             });
         } catch (_) {}
 
-        // 3. Atualiza na tabela passageiros
+        // 5. Atualiza na tabela passageiros
         try {
           const passPayload: any = {
             nome: next.name,
@@ -432,18 +520,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const { error: errId } = await supabase
             .from('passageiros')
             .update(passPayload)
-            .eq('id', user.id);
+            .eq('id', activeUserId);
 
-          if (errId && user.email) {
+          if (errId && activeUserEmail) {
             await supabase
               .from('passageiros')
               .update(passPayload)
-              .eq('email', user.email);
+              .eq('email', activeUserEmail);
           }
         } catch (_) {}
       }
     } catch (err) {
-      console.error('Erro ao atualizar perfil:', err);
+      console.error('Erro ao atualizar perfil no backend:', err);
     }
   };
 

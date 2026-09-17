@@ -10,10 +10,12 @@ const DEFAULT_MANAUS_LOCATION: LocationCoordinates = {
   longitude: -60.0125,
   street: 'Av. Mário Ypiranga',
   number: '1300',
-  address: 'Av. Mário Ypiranga, Nº 1300',
+  address: 'Av. Mário Ypiranga, 1300',
   neighborhood: 'Adrianópolis',
   city: 'Manaus'
 };
+
+const LAST_LOCATION_STORAGE_KEY = 'sr_passenger_last_location';
 
 function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371e3;
@@ -30,8 +32,31 @@ function calculateDistanceMeters(lat1: number, lon1: number, lat2: number, lon2:
   return R * c;
 }
 
+function getInitialCachedLocation(): LocationCoordinates | null {
+  if (typeof window === 'undefined') return DEFAULT_MANAUS_LOCATION;
+  try {
+    const raw = localStorage.getItem(LAST_LOCATION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.latitude && parsed?.longitude) {
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  return DEFAULT_MANAUS_LOCATION;
+}
+
+export interface LiveCoords {
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  heading?: number | null;
+  speed?: number | null;
+}
+
 export function usePassengerLocation() {
-  const [location, setLocation] = useState<LocationCoordinates | null>(null);
+  const [location, setLocation] = useState<LocationCoordinates | null>(getInitialCachedLocation);
+  const [liveCoords, setLiveCoords] = useState<LiveCoords | null>(null);
   const [hasRealGPS, setHasRealGPS] = useState(false);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -55,8 +80,8 @@ export function usePassengerLocation() {
         lat,
         lng
       );
-      // Se moveu menos de 15 metros, não precisa re-executar reverse geocode na API
-      if (dist < 15) return;
+      // Se moveu menos de 10 metros e já tem endereço, não precisa re-executar reverse geocode na API
+      if (dist < 10) return;
     }
 
     isGeocodingInProgress.current = true;
@@ -64,15 +89,25 @@ export function usePassengerLocation() {
     try {
       const geoData = await reverseGeocode(lat, lng);
       lastGeocodedCoords.current = { lat, lng };
-      setLocation((prev) => ({
+
+      const updatedLocation: LocationCoordinates = {
         latitude: lat,
         longitude: lng,
-        street: geoData.street || prev?.street,
-        number: geoData.number || prev?.number,
+        street: geoData.street,
+        number: geoData.number,
         address: geoData.address,
         neighborhood: geoData.neighborhood,
         city: geoData.city
-      }));
+      };
+
+      setLocation(updatedLocation);
+
+      // Salva último local resolvido para carregamento instantâneo
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(LAST_LOCATION_STORAGE_KEY, JSON.stringify(updatedLocation));
+        } catch (_) {}
+      }
     } catch {
       // mantém coordenadas reais
     } finally {
@@ -84,29 +119,42 @@ export function usePassengerLocation() {
   // Callback de sucesso da geolocalização do navegador
   const handlePositionSuccess = useCallback(
     (pos: GeolocationPosition) => {
-      const { latitude, longitude, accuracy: acc } = pos.coords;
+      const { latitude, longitude, accuracy: acc, heading, speed } = pos.coords;
+      const roundedAcc = Math.round(acc);
 
       setPermissionGranted(true);
       setGpsError(null);
       setLoading(false);
       setHasRealGPS(true);
       setIsLiveTracking(true);
-      setAccuracy(Math.round(acc));
+      setAccuracy(roundedAcc);
 
-      // Atualiza coordenadas no estado imediatamente com as coordenadas REAIS do aparelho
-      setLocation((prev) => ({
+      setLiveCoords({
         latitude,
         longitude,
-        street: prev?.street,
-        number: prev?.number,
-        address: prev?.address && prev.latitude === latitude && prev.longitude === longitude
-          ? prev.address
-          : (prev?.address || 'Identificando endereço da sua localização...'),
-        neighborhood: prev?.neighborhood || '',
-        city: prev?.city || 'Manaus'
-      }));
+        accuracy: roundedAcc,
+        heading: heading ?? null,
+        speed: speed ?? null
+      });
 
-      // Faz o reverse geocode para buscar nome da rua e bairro
+      // Atualiza coordenadas no estado imediatamente com as coordenadas REAIS do aparelho
+      setLocation((prev) => {
+        const nextLoc: LocationCoordinates = {
+          latitude,
+          longitude,
+          street: prev?.street,
+          number: prev?.number,
+          address:
+            prev?.address && prev.latitude === latitude && prev.longitude === longitude
+              ? prev.address
+              : (prev?.address || 'Identificando endereço da sua localização...'),
+          neighborhood: prev?.neighborhood || '',
+          city: prev?.city || 'Manaus'
+        };
+        return nextLoc;
+      });
+
+      // Faz o reverse geocode em tempo real para obter a rua e número
       handleReverseGeocode(latitude, longitude);
     },
     [handleReverseGeocode]
@@ -155,11 +203,11 @@ export function usePassengerLocation() {
 
     setLoading(true);
 
-    // 1. Obtém posição inicial rápida
+    // 1. Obtém posição inicial rápida com alta precisão
     navigator.geolocation.getCurrentPosition(
       handlePositionSuccess,
       handlePositionError,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 1000 }
     );
 
     // 2. Limpa monitoramento anterior se houver
@@ -167,15 +215,15 @@ export function usePassengerLocation() {
       navigator.geolocation.clearWatch(watchIdRef.current);
     }
 
-    // 3. Inicia rastreamento contínuo em tempo real
+    // 3. Inicia rastreamento contínuo em tempo real (atualiza conforme o passageiro se desloca)
     try {
       watchIdRef.current = navigator.geolocation.watchPosition(
         handlePositionSuccess,
         handlePositionError,
         {
           enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 3000
+          timeout: 10000,
+          maximumAge: 1000
         }
       );
     } catch (e) {
@@ -213,6 +261,11 @@ export function usePassengerLocation() {
 
   const updateManualLocation = (newLoc: LocationCoordinates) => {
     setLocation(newLoc);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(LAST_LOCATION_STORAGE_KEY, JSON.stringify(newLoc));
+      } catch (_) {}
+    }
   };
 
   const forceResolveCurrentAddress = () => {
@@ -223,6 +276,7 @@ export function usePassengerLocation() {
 
   return {
     location,
+    liveCoords,
     hasRealGPS,
     accuracy,
     loading,

@@ -159,6 +159,28 @@ const createDestinationIcon = (label?: string, isDragging = false) =>
     iconAnchor: [110, 100]
   });
 
+// Marcador Pulsante do GPS Real do Aparelho do Passageiro
+const createPassengerPulseIcon = () =>
+  L.divIcon({
+    className: 'custom-live-passenger-dot',
+    html: `
+      <div style="
+        position: relative;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
+      ">
+        <span style="position: absolute; width: 24px; height: 24px; border-radius: 50%; background: rgba(16, 185, 129, 0.45); animation: ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;"></span>
+        <div style="width: 14px; height: 14px; border-radius: 50%; background: #10b981; border: 2.5px solid #ffffff; box-shadow: 0 0 10px rgba(16, 185, 129, 0.85); z-index: 2;"></div>
+      </div>
+    `,
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  });
+
 const createCarIcon = (isAssigned = false, driverName?: string, vehicleModel?: string) =>
   L.divIcon({
     className: 'custom-car-pin-container',
@@ -236,7 +258,8 @@ function MapController({
   pickupRouteCoordinates,
   tripStatus,
   driverLocation,
-  focusRouteTrigger
+  focusRouteTrigger,
+  autoFollowOrigin = true
 }: {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
@@ -245,6 +268,7 @@ function MapController({
   tripStatus?: string;
   driverLocation?: LocationCoordinates | null;
   focusRouteTrigger?: number;
+  autoFollowOrigin?: boolean;
 }) {
   const map = useMap();
 
@@ -301,10 +325,10 @@ function MapController({
         [origin.latitude, origin.longitude]
       ]);
       map.fitBounds(bounds, { padding: [80, 80], maxZoom: 16, animate: true });
-    } else if (origin) {
+    } else if (origin && autoFollowOrigin) {
       map.panTo([origin.latitude, origin.longitude], { animate: true, duration: 0.8 });
     }
-  }, [origin, destination, routeCoordinates, pickupRouteCoordinates, tripStatus, driverLocation, focusRouteTrigger, map]);
+  }, [origin, destination, routeCoordinates, pickupRouteCoordinates, tripStatus, driverLocation, focusRouteTrigger, autoFollowOrigin, map]);
 
   return null;
 }
@@ -323,6 +347,7 @@ function MapClickHandler({ onMapClick }: { onMapClick?: (coords: [number, number
 export interface PassengerMapProps {
   origin: LocationCoordinates | null;
   destination: LocationCoordinates | null;
+  liveGpsCoords?: { latitude: number; longitude: number; accuracy?: number | null } | null;
   routeCoordinates?: Array<[number, number]>;
   pickupRouteCoordinates?: Array<[number, number]>;
   tripStatus?: string;
@@ -337,12 +362,14 @@ export interface PassengerMapProps {
   isDestinationDraggable?: boolean;
   pinLabel?: string;
   focusRouteTrigger?: number;
+  autoFollowOrigin?: boolean;
   className?: string;
 }
 
 export default function PassengerMap({
   origin,
   destination,
+  liveGpsCoords,
   routeCoordinates = [],
   pickupRouteCoordinates = [],
   tripStatus,
@@ -357,12 +384,15 @@ export default function PassengerMap({
   isDestinationDraggable = true,
   pinLabel,
   focusRouteTrigger,
+  autoFollowOrigin = true,
   className = 'w-full h-full'
 }: PassengerMapProps) {
   // Posição padrão de Manaus como centro de visualização
   const defaultCenter: [number, number] = [-3.1037, -60.0125];
   const center: [number, number] = origin
     ? [origin.latitude, origin.longitude]
+    : liveGpsCoords
+    ? [liveGpsCoords.latitude, liveGpsCoords.longitude]
     : defaultCenter;
 
   const [isDraggingOrigin, setIsDraggingOrigin] = useState(false);
@@ -376,6 +406,7 @@ export default function PassengerMap({
     () => createDestinationIcon(destination?.address || 'Destino', isDraggingDest),
     [destination?.address, isDraggingDest]
   );
+  const passengerPulseIcon = useMemo(() => createPassengerPulseIcon(), []);
   const assignedCarIcon = useMemo(
     () => createCarIcon(true, driver?.name?.split(' ')[0], driver?.vehicle?.model),
     [driver?.name, driver?.vehicle?.model]
@@ -420,6 +451,7 @@ export default function PassengerMap({
           tripStatus={tripStatus}
           driverLocation={driver?.current_location}
           focusRouteTrigger={focusRouteTrigger}
+          autoFollowOrigin={autoFollowOrigin}
         />
 
         <MapClickHandler onMapClick={onMapClick} />
@@ -463,6 +495,14 @@ export default function PassengerMap({
               fillOpacity: 0.12,
               weight: 1
             }}
+          />
+        )}
+
+        {/* Ponto Pulsante de GPS Real do Aparelho (se diferente da origem manual ou para feedback de precisão) */}
+        {liveGpsCoords && (
+          <Marker
+            position={[liveGpsCoords.latitude, liveGpsCoords.longitude]}
+            icon={passengerPulseIcon}
           />
         )}
 
