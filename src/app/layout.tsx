@@ -45,6 +45,32 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
           crossOrigin=""
         />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function() {
+                try {
+                  if (typeof document !== 'undefined' && document.cookie) {
+                    var totalCookieLen = document.cookie.length;
+                    if (totalCookieLen > 3000) {
+                      var cookies = document.cookie.split(';');
+                      for (var i = 0; i < cookies.length; i++) {
+                        var c = cookies[i].trim();
+                        var eq = c.indexOf('=');
+                        var name = eq > -1 ? c.substring(0, eq) : c;
+                        var val = eq > -1 ? c.substring(eq + 1) : '';
+                        if (name.indexOf('sb-') === 0 && (name.indexOf('.1') > -1 || name.indexOf('.2') > -1 || name.indexOf('.3') > -1 || val.length > 2000)) {
+                          document.cookie = name + '=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                          document.cookie = name + '=; path=/; domain=' + window.location.hostname + '; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+                        }
+                      }
+                    }
+                  }
+                } catch(e) {}
+              })();
+            `
+          }}
+        />
       </head>
       <body className="font-sans antialiased bg-[color:var(--bg)] dark:bg-dark-950 transition-colors min-h-dvh select-none text-slate-900 dark:text-slate-100">
         <ThemeProvider>

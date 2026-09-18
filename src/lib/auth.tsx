@@ -244,16 +244,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         defaultAvatar: DEFAULT_AVATAR_URL
       });
 
-      // Se a foto local for personalizada mas o Auth em nuvem ainda não tiver, sincroniza em background
-      if (avatarVal && isCustomAvatar(avatarVal) && (!metaAvatar || metaAvatar === DEFAULT_AVATAR_URL)) {
-        try {
-          const compactThumb = avatarVal.startsWith('data:image/')
-            ? await createCompactAvatarThumbnail(avatarVal)
-            : avatarVal;
-          supabase.auth.updateUser({
-            data: { avatar_url: compactThumb, foto: compactThumb, avatar: compactThumb, foto_status: finalFotoStatus }
-          }).catch(() => {});
-        } catch (_) {}
+      // Purga automática de Base64 nos metadados do Auth para evitar inchaço de JWT e Erro 494 (REQUEST_HEADER_TOO_LARGE no Vercel)
+      const hasOversizedMeta = Boolean(
+        (userMeta.avatar_url && String(userMeta.avatar_url).startsWith('data:')) ||
+        (userMeta.foto && String(userMeta.foto).startsWith('data:')) ||
+        (userMeta.avatar && String(userMeta.avatar).startsWith('data:')) ||
+        (userMeta.foto_url && String(userMeta.foto_url).startsWith('data:'))
+      );
+
+      if (hasOversizedMeta) {
+        supabase.auth.updateUser({
+          data: {
+            avatar_url: null,
+            foto: null,
+            foto_url: null,
+            avatar: null
+          }
+        }).catch(() => {});
       }
 
       // Fixa o avatar resolvido no armazenamento local
@@ -602,9 +609,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       if (isSupabaseConfigured && (user || activeUserId)) {
-        // 1. Processa a foto: tenta upload para o Supabase Storage público e gera miniatura
+        // 1. Processa a foto: tenta upload para o Supabase Storage público
         let cloudAvatarUrl = next.avatar_url;
-        let compactCloudAvatar = next.avatar_url;
 
         if (next.avatar_url && (next.avatar_url.startsWith('data:image/') || next.avatar_url.startsWith('blob:'))) {
           try {
@@ -612,45 +618,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const storageUrl = await uploadAvatarToSupabaseStorage(activeUserId || 'user', next.avatar_url);
             if (storageUrl) {
               cloudAvatarUrl = storageUrl;
-              compactCloudAvatar = storageUrl;
-            } else {
-              compactCloudAvatar = await createCompactAvatarThumbnail(next.avatar_url);
-              cloudAvatarUrl = next.avatar_url;
             }
-          } catch (_) {
-            compactCloudAvatar = next.avatar_url;
-            cloudAvatarUrl = next.avatar_url;
-          }
+          } catch (_) {}
         }
 
-        // 2. Atualiza nos metadados do Auth do Supabase (armazenamento persistente em nuvem)
+        // 2. Atualiza nos metadados do Auth do Supabase (Apenas dados textuais e URL http pública se existir)
         try {
+          const authMetaPayload: Record<string, any> = {
+            name: next.name,
+            nome: next.name,
+            phone: next.phone,
+            telefone: next.phone,
+            cpf: next.cpf,
+            matricula: next.employee_registration,
+            turno: next.shift,
+            endereco: next.pickup_address,
+            foto_status: nextFotoStatus,
+            photo_status: nextPhotoStatus,
+            motivo_rejeicao: nextRejectionReason || null,
+            rejection_reason: nextRejectionReason || null,
+            company: next.company,
+            empresa: next.company,
+            department: next.department,
+            setor: next.department,
+            payment_preference: next.payment_preference,
+            status: next.status,
+            is_approved: next.is_approved
+          };
+
+          // NUNCA coloca base64 no Supabase Auth User Metadata (evita erro 494 REQUEST_HEADER_TOO_LARGE)
+          if (cloudAvatarUrl && (cloudAvatarUrl.startsWith('http://') || cloudAvatarUrl.startsWith('https://'))) {
+            authMetaPayload.avatar_url = cloudAvatarUrl;
+          } else {
+            authMetaPayload.avatar_url = null;
+            authMetaPayload.foto = null;
+            authMetaPayload.foto_url = null;
+            authMetaPayload.avatar = null;
+          }
+
           await supabase.auth.updateUser({
-            data: {
-              name: next.name,
-              nome: next.name,
-              phone: next.phone,
-              telefone: next.phone,
-              cpf: next.cpf,
-              matricula: next.employee_registration,
-              turno: next.shift,
-              endereco: next.pickup_address,
-              avatar_url: compactCloudAvatar,
-              foto: compactCloudAvatar,
-              foto_url: compactCloudAvatar,
-              avatar: compactCloudAvatar,
-              foto_status: nextFotoStatus,
-              photo_status: nextPhotoStatus,
-              motivo_rejeicao: nextRejectionReason || null,
-              rejection_reason: nextRejectionReason || null,
-              company: next.company,
-              empresa: next.company,
-              department: next.department,
-              setor: next.department,
-              payment_preference: next.payment_preference,
-              status: next.status,
-              is_approved: next.is_approved
-            }
+            data: authMetaPayload
           });
         } catch (e) {
           console.warn('Aviso ao atualizar metadados do Auth:', e);
