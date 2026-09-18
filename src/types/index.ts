@@ -55,10 +55,28 @@ export interface PassengerProfile {
   employee_registration?: string;
   shift?: string;
   pickup_address?: string;
+  solicitacao_pendente?: boolean;
   status?: AccountStatus;
   is_approved?: boolean;
   approved_at?: string;
   created_at: string;
+}
+
+export interface AlterationRequest {
+  id?: string;
+  tipo_usuario: 'passageiro' | 'motorista';
+  usuario_id: string;
+  usuario_nome: string;
+  tipo_alteracao: 'dados_cadastrais' | 'empresa' | 'dados_pessoais';
+  dados_anteriores: Record<string, any>;
+  dados_novos: Record<string, any>;
+  justificativa?: string;
+  status: 'Pendente' | 'Aprovado' | 'Rejeitado';
+  motivo_rejeicao?: string;
+  analisado_por?: string;
+  analisado_em?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DriverInfo {

@@ -320,6 +320,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         rating: 5.0,
         total_rides: passData?.total_rides || 0,
         payment_preference: prefVal,
+        solicitacao_pendente: Boolean(passData?.solicitacao_pendente || profData?.solicitacao_pendente),
         status: statusVal as 'active' | 'pending' | 'blocked',
         is_approved: isApproved,
         created_at: currentUser.created_at || new Date().toISOString()

@@ -26,11 +26,19 @@ import {
   Download,
   Fingerprint,
   Building,
+  Building2,
   Briefcase,
   Search,
   Users,
   AlertCircle,
-  AlertTriangle
+  AlertTriangle,
+  Edit3,
+  MapPin,
+  Phone,
+  FileText,
+  X,
+  Send,
+  Lock
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -38,6 +46,11 @@ import { SupportModal } from '@/components/SupportModal';
 import { PendingApprovalModal } from '@/components/PendingApprovalModal';
 import { SR_SUPPORT_CONFIG } from '@/types';
 import { supabase } from '@/lib/supabase';
+import { AlterationRequest } from '@/types';
+import {
+  submitPassengerAlteration,
+  getPassengerPendingAlteration
+} from '@/lib/passenger-alteration';
 import {
   optimizeAvatarImage,
   persistPassengerAvatar,
@@ -92,6 +105,7 @@ export default function PerfilPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
+  // Dados Oficiais Vigentes
   const [name, setName] = useState(profile?.name || '');
   const [phone, setPhone] = useState(profile?.phone || '');
   const [cpf, setCpf] = useState(profile?.cpf || '');
@@ -105,8 +119,33 @@ export default function PerfilPage() {
     return profile?.avatar_url || getInstantSyncPassengerAvatar(profile?.id, profile?.email) || DEFAULT_AVATAR_URL;
   });
 
+  // Modais de Edição / Solicitação para Análise
+  const [isPersonalModalOpen, setIsPersonalModalOpen] = useState(false);
+  const [isCompanyModalOpen, setIsCompanyModalOpen] = useState(false);
+
+  // Estados dos dados em solicitação
+  const [pendingAlteration, setPendingAlteration] = useState<AlterationRequest | null>(null);
+  const [alterationStatus, setAlterationStatus] = useState<string | null>(null);
+  const [alterationRejectionReason, setAlterationRejectionReason] = useState<string | null>(null);
+
+  // Campos do Modal 1: Dados Pessoais
+  const [modalName, setModalName] = useState('');
+  const [modalPhone, setModalPhone] = useState('');
+  const [modalCpf, setModalCpf] = useState('');
+  const [modalAddress, setModalAddress] = useState('');
+  const [modalJustification, setModalJustification] = useState('');
+
+  // Campos do Modal 2: Dados da Empresa
+  const [modalCompany, setModalCompany] = useState('');
+  const [modalDepartment, setModalDepartment] = useState('');
+  const [modalEmployeeRegistration, setModalEmployeeRegistration] = useState('');
+  const [modalShift, setModalShift] = useState('');
+  const [modalCompanyJustification, setModalCompanyJustification] = useState('');
+
+  const [isSubmittingAlt, setIsSubmittingAlt] = useState(false);
+  const [altSuccessMsg, setAltSuccessMsg] = useState<string | null>(null);
+
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
   const [isSupportOpen, setIsSupportOpen] = useState(false);
@@ -155,6 +194,63 @@ export default function PerfilPage() {
     }
     loadCompanies();
   }, []);
+
+  // Carrega e sincroniza em tempo real as solicitações de alteração do passageiro
+  useEffect(() => {
+    const uid = profile?.id || user?.id;
+    if (!uid) return;
+
+    async function fetchAlterations() {
+      const lastReq = await getPassengerPendingAlteration(uid);
+      if (lastReq) {
+        setPendingAlteration(lastReq);
+        setAlterationStatus(lastReq.status === 'Pendente' ? 'Aguardando aprovação' : lastReq.status);
+        if (lastReq.status === 'Rejeitado') {
+          setAlterationRejectionReason(lastReq.motivo_rejeicao || null);
+        }
+      }
+    }
+    fetchAlterations();
+
+    // Sincronização em tempo real via Supabase Realtime
+    if (supabase) {
+      const channel = supabase
+        .channel(`passenger_alterations_${uid}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'solicitacoes_alteracao',
+            filter: `usuario_id=eq.${uid}`
+          },
+          (payload: any) => {
+            if (payload.new) {
+              const req = payload.new as AlterationRequest;
+              setPendingAlteration(req);
+              setAlterationStatus(req.status === 'Pendente' ? 'Aguardando aprovação' : req.status);
+              if (req.status === 'Rejeitado') {
+                setAlterationRejectionReason(req.motivo_rejeicao || null);
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      const handleLocalUpdate = (e: any) => {
+        if (e.detail) {
+          setPendingAlteration(e.detail);
+          setAlterationStatus('Aguardando aprovação');
+        }
+      };
+      window.addEventListener('sr_passenger_alteration_updated', handleLocalUpdate);
+
+      return () => {
+        supabase.removeChannel(channel);
+        window.removeEventListener('sr_passenger_alteration_updated', handleLocalUpdate);
+      };
+    }
+  }, [profile?.id, user?.id]);
 
   // Carrega passageiros para ferramenta administrativa
   const loadAdminPassengers = async () => {
@@ -376,36 +472,125 @@ export default function PerfilPage() {
     }
   };
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      if (avatarUrl) {
-        await persistPassengerAvatar({
-          userId: profile?.id || user?.id,
-          email: profile?.email || user?.email,
-          avatarUrl: avatarUrl
-        });
-      }
+  // Abrir Modal de Dados Pessoais
+  const handleOpenPersonalModal = () => {
+    setModalName(profile?.name || name || '');
+    setModalPhone(profile?.phone || phone || '');
+    setModalCpf(profile?.cpf || cpf || '');
+    setModalAddress(profile?.pickup_address || pickupAddress || '');
+    setModalJustification('');
+    setAltSuccessMsg(null);
+    setIsPersonalModalOpen(true);
+  };
 
-      await updateProfile({
-        name,
-        phone,
-        cpf,
-        employee_registration: employeeRegistration,
-        shift,
-        pickup_address: pickupAddress,
-        company,
-        department,
-        payment_preference: paymentPreference,
-        avatar_url: avatarUrl
+  // Abrir Modal de Dados da Empresa
+  const handleOpenCompanyModal = () => {
+    setModalCompany(profile?.company || company || 'SR Logística & Transporte');
+    setModalDepartment(profile?.department || department || 'Operações e Gestão');
+    setModalEmployeeRegistration(profile?.employee_registration || employeeRegistration || '');
+    setModalShift(profile?.shift || shift || '');
+    setModalCompanyJustification('');
+    setAltSuccessMsg(null);
+    setIsCompanyModalOpen(true);
+  };
+
+  // Submeter Solicitação de Dados Pessoais para Análise
+  const handleSubmitPersonalAlteration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const uid = profile?.id || user?.id;
+    if (!uid) return;
+
+    setIsSubmittingAlt(true);
+    try {
+      const dadosAnteriores = {
+        name: profile?.name || name,
+        phone: profile?.phone || phone,
+        cpf: profile?.cpf || cpf,
+        pickup_address: profile?.pickup_address || pickupAddress
+      };
+
+      const dadosNovos = {
+        name: modalName.trim(),
+        phone: modalPhone.trim(),
+        cpf: modalCpf.trim(),
+        pickup_address: modalAddress.trim()
+      };
+
+      const req = await submitPassengerAlteration({
+        userId: uid,
+        userName: modalName.trim() || profile?.name || 'Passageiro',
+        tipoAlteracao: 'dados_pessoais',
+        dadosAnteriores,
+        dadosNovos,
+        justificativa: modalJustification.trim()
       });
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3000);
-    } catch (err) {
-      console.error('Erro ao salvar perfil:', err);
+
+      setPendingAlteration(req);
+      setAlterationStatus('Aguardando aprovação');
+      setAltSuccessMsg('Solicitação enviada com sucesso! Aguardando aprovação do administrador.');
+      setTimeout(() => {
+        setIsPersonalModalOpen(false);
+        setAltSuccessMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      alert('Erro ao enviar solicitação: ' + (err.message || 'Falha na conexão'));
     } finally {
-      setIsSaving(false);
+      setIsSubmittingAlt(false);
+    }
+  };
+
+  // Submeter Solicitação de Dados da Empresa para Análise
+  const handleSubmitCompanyAlteration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const uid = profile?.id || user?.id;
+    if (!uid) return;
+
+    setIsSubmittingAlt(true);
+    try {
+      const dadosAnteriores = {
+        company: profile?.company || company,
+        department: profile?.department || department,
+        employee_registration: profile?.employee_registration || employeeRegistration,
+        shift: profile?.shift || shift
+      };
+
+      const dadosNovos = {
+        company: modalCompany.trim(),
+        department: modalDepartment.trim(),
+        employee_registration: modalEmployeeRegistration.trim(),
+        shift: modalShift.trim()
+      };
+
+      const req = await submitPassengerAlteration({
+        userId: uid,
+        userName: profile?.name || name || 'Passageiro',
+        tipoAlteracao: 'empresa',
+        dadosAnteriores,
+        dadosNovos,
+        justificativa: modalCompanyJustification.trim()
+      });
+
+      setPendingAlteration(req);
+      setAlterationStatus('Aguardando aprovação');
+      setAltSuccessMsg('Solicitação de vínculo corporativo enviada! Aguardando moderação.');
+      setTimeout(() => {
+        setIsCompanyModalOpen(false);
+        setAltSuccessMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      alert('Erro ao enviar solicitação: ' + (err.message || 'Falha na conexão'));
+    } finally {
+      setIsSubmittingAlt(false);
+    }
+  };
+
+  // Alternância rápida de Preferência de Pagamento
+  const handleSavePaymentPreference = async (newPref: 'PIX' | 'VOUCHER') => {
+    setPaymentPreference(newPref);
+    try {
+      await updateProfile({ payment_preference: newPref });
+    } catch (e) {
+      console.warn('Aviso ao salvar preferência de pagamento:', e);
     }
   };
 
@@ -426,6 +611,16 @@ export default function PerfilPage() {
     profile?.photo_status !== 'pending';
 
   const isAdmin = profile?.role === 'admin';
+
+  const isPersonalPending =
+    alterationStatus === 'Aguardando aprovação' ||
+    profile?.solicitacao_pendente === true;
+
+  const isPersonalRejected =
+    alterationStatus === 'Rejeitado' ||
+    Boolean(alterationRejectionReason);
+
+  const pendingPersonalData = pendingAlteration?.dados_novos;
 
   return (
     <div className="flex flex-col min-h-dvh p-4 sm:p-5 space-y-4 pb-28 max-w-lg mx-auto w-full">
@@ -516,7 +711,7 @@ export default function PerfilPage() {
         </div>
       )}
 
-      {/* 2. Banner Informativo de Status "Aguardando aprovação" */}
+      {/* 2. Banner Informativo de Status da Foto "Aguardando aprovação" */}
       {!isApproved && !isRejected && (
         <div className="rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent p-4 space-y-2.5 shadow-sm animate-in fade-in">
           <div className="flex items-start gap-3">
@@ -530,10 +725,10 @@ export default function PerfilPage() {
                 </Badge>
               </div>
               <h3 className="text-xs font-black text-slate-900 dark:text-white mt-1">
-                Foto e Cadastro em Análise pela Administração
+                Foto e Cadastro em Análise pela Central
               </h3>
               <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
-                Sua foto de perfil e dados cadastrais foram enviados para validação da central. O status permanecerá como <strong>"Aguardando aprovação"</strong> até que o administrador aprove ou rejeite no painel administrativo.
+                Sua foto de perfil foi enviada para validação. O status permanecerá como <strong>"Aguardando aprovação"</strong> até que o administrador aprove ou rejeite no painel administrativo.
               </p>
             </div>
           </div>
@@ -678,240 +873,288 @@ export default function PerfilPage() {
         </a>
       )}
 
-      {/* Formulário de Dados Pessoais & Corporativos */}
-      <form
-        onSubmit={handleSave}
-        className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-5 space-y-4 shadow-sm"
-      >
+      {/* ========================================================================= */}
+      {/* 1. CARD DADOS PESSOAIS (MODO SOMENTE LEITURA + BOTÃO POP-UP DE MODERAÇÃO) */}
+      {/* ========================================================================= */}
+      <div className="bg-white dark:bg-dark-800 rounded-3xl p-5 border border-slate-200/80 dark:border-dark-700/80 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <User size={13} /> Dados do Passageiro
-          </span>
-          <button
-            type="button"
-            onClick={() => setIsAvatarModalOpen(true)}
-            className="text-xs font-bold text-brand hover:underline flex items-center gap-1"
-          >
-            <Camera size={12} /> Alterar Foto
-          </button>
+          <div className="flex items-center gap-2">
+            <User size={16} className="text-brand" />
+            <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              DADOS PESSOAIS
+            </h3>
+          </div>
+          {isPersonalPending ? (
+            <span className="inline-flex items-center gap-1 bg-amber-500/20 border border-amber-500/40 text-amber-800 dark:text-amber-300 text-[10px] font-black px-2.5 py-0.5 rounded-full animate-pulse">
+              <Clock size={11} />
+              <span>Em análise</span>
+            </span>
+          ) : isPersonalRejected ? (
+            <span className="inline-flex items-center gap-1 bg-red-500/20 border border-red-500/40 text-red-600 dark:text-red-400 text-[10px] font-black px-2.5 py-0.5 rounded-full">
+              <AlertTriangle size={11} />
+              <span>Alteração Recusada</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+              <Lock size={10} /> Protegido
+            </span>
+          )}
         </div>
 
-        {savedSuccess && (
-          <div className="flex flex-col gap-1.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 p-3.5 text-xs text-amber-900 dark:text-amber-200 font-medium animate-in fade-in">
-            <div className="flex items-center gap-2 font-black text-amber-700 dark:text-amber-300">
-              <Clock size={16} />
-              <span>Status: Aguardando aprovação</span>
+        {/* BANNER EM ANÁLISE */}
+        {isPersonalPending && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-2 animate-in fade-in">
+            <div className="flex items-center gap-2 font-black text-amber-800 dark:text-amber-300">
+              <Clock size={16} className="shrink-0 animate-pulse" />
+              <span>Alteração aguardando aprovação</span>
             </div>
-            <p className="text-[11px] text-slate-600 dark:text-slate-300">
-              Sua foto, dados de perfil e vínculo empresarial foram salvos e enviados para homologação pelo administrador.
+            <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+              Sua solicitação de alteração cadastral está sob análise do administrador. Os dados oficiais abaixo continuam vigentes até a aprovação pelo site.
+            </p>
+            {pendingPersonalData && (
+              <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] space-y-1">
+                <span className="font-bold block text-amber-900 dark:text-amber-200">Novos dados enviados:</span>
+                {pendingPersonalData.name && <div>• Nome: <strong>{pendingPersonalData.name}</strong></div>}
+                {pendingPersonalData.cpf && <div>• CPF: <strong>{pendingPersonalData.cpf}</strong></div>}
+                {pendingPersonalData.phone && <div>• Telefone: <strong>{pendingPersonalData.phone}</strong></div>}
+                {pendingPersonalData.pickup_address && <div>• Endereço: <strong>{pendingPersonalData.pickup_address}</strong></div>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* BANNER RECUSADO */}
+        {isPersonalRejected && (
+          <div className="p-3.5 rounded-2xl bg-red-500/15 border border-red-500/30 text-xs text-red-900 dark:text-red-200 space-y-1.5 animate-in fade-in">
+            <div className="flex items-center gap-2 font-black text-red-700 dark:text-red-400">
+              <AlertTriangle size={16} className="shrink-0" />
+              <span>Alteração recusada pelo administrador</span>
+            </div>
+            <p className="text-[11px] text-red-800 dark:text-red-300 leading-relaxed">
+              {alterationRejectionReason || 'Os dados informados não puderam ser homologados. Por favor, solicite uma nova alteração com as informações corretas.'}
             </p>
           </div>
         )}
 
-        <div className="space-y-4">
-          {/* Seção 1: Dados Pessoais do Passageiro (Editáveis a Qualquer Momento) */}
-          <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50/50 dark:bg-dark-900/40 p-3.5">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-dark-700/60">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <User size={14} className="text-brand" /> Dados Pessoais
-              </span>
-              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                Editável a qualquer momento
-              </span>
-            </div>
-
-            <Field label="Nome Completo">
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Seu nome completo"
-                required
-              />
-            </Field>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <Field label="Telefone / WhatsApp">
-                <Input
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(92) 99999-9999"
-                  required
-                />
-              </Field>
-
-              <Field label="CPF (Documento Pessoal)">
-                <Input
-                  value={cpf}
-                  onChange={(e) => setCpf(e.target.value)}
-                  placeholder="000.000.000-00"
-                />
-              </Field>
-            </div>
-
-            <Field label="Endereço Residencial / Ponto de Embarque">
-              <Input
-                value={pickupAddress}
-                onChange={(e) => setPickupAddress(e.target.value)}
-                placeholder="Ex: Rua Aparecida, 15 - Adrianópolis"
-              />
-            </Field>
+        {/* FICHA CADASTRAL FIXA (SOMENTE LEITURA) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-dark-900/50 border border-slate-100 dark:border-dark-700/60 space-y-3">
+          <div className="border-b border-slate-200/60 dark:border-dark-700/60 pb-2.5">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+              Nome Completo (Conforme Documento)
+            </span>
+            <span className="text-sm font-black text-slate-900 dark:text-white">
+              {profile?.name || name || 'Não informado'}
+            </span>
           </div>
 
-          {/* Seção 2: Vínculo Corporativo & Operacional (Passa por Aprovação da Central) */}
-          <div className="space-y-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-slate-50 dark:bg-dark-900/50 p-3.5">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-200/60 dark:border-dark-700/60">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                <Building size={14} className="text-brand" /> Empresa Conveniada / Vínculo
+          <div className="grid grid-cols-2 gap-3 border-b border-slate-200/60 dark:border-dark-700/60 pb-2.5">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                CPF
               </span>
-              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                Requer aprovação
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">
+                {profile?.cpf || cpf || '—'}
               </span>
             </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <div>
-                <label className="text-[11px] font-semibold text-slate-500 mb-1 block">Escolha da Lista</label>
-                <select
-                  value={partnerCompanies.some(c => c.name === company) ? company : 'Outra'}
-                  onChange={(e) => {
-                    if (e.target.value !== 'Outra') {
-                      setCompany(e.target.value);
-                    }
-                  }}
-                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 py-2 px-2.5 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand"
-                >
-                  {partnerCompanies.map((c, idx) => (
-                    <option key={idx} value={c.name}>{c.name}</option>
-                  ))}
-                  <option value="Outra">Outra / Digitar Manualmente</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-semibold text-slate-500 mb-1 block">Razão Social / Nome</label>
-                <Input
-                  value={company}
-                  onChange={(e) => setCompany(e.target.value)}
-                  placeholder="Nome da empresa"
-                />
-              </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                Telefone / WhatsApp
+              </span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {profile?.phone || phone || '—'}
+              </span>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              <div className="sm:col-span-1">
-                <Field label="Setor / Departamento">
-                  <Input
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    placeholder="Ex: Operações, TI"
-                  />
-                </Field>
-              </div>
+          <div className="border-b border-slate-200/60 dark:border-dark-700/60 pb-2.5">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+              E-mail Oficial (Autenticado)
+            </span>
+            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate block">
+              {profile?.email || user?.email || '—'}
+            </span>
+          </div>
 
-              <div>
-                <Field label="Matrícula Funcional">
-                  <Input
-                    value={employeeRegistration}
-                    onChange={(e) => setEmployeeRegistration(e.target.value)}
-                    placeholder="Ex: MAT-12345"
-                  />
-                </Field>
-              </div>
-
-              <div>
-                <Field label="Turno de Trabalho">
-                  <Input
-                    value={shift}
-                    onChange={(e) => setShift(e.target.value)}
-                    placeholder="Ex: 1º Turno (06h-14h)"
-                  />
-                </Field>
-              </div>
-            </div>
-
-            <Field label="E-mail (Autenticado)">
-              <Input
-                disabled
-                value={profile?.email || ''}
-                className="opacity-70 bg-slate-100 dark:bg-dark-900/50 cursor-not-allowed font-medium"
-              />
-            </Field>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+              Endereço Cadastrado / Ponto de Embarque
+            </span>
+            <span className="text-xs font-medium text-slate-700 dark:text-slate-300 leading-relaxed block">
+              {profile?.pickup_address || pickupAddress || 'Endereço em Manaus - AM'}
+            </span>
           </div>
         </div>
 
-        {/* Botão Especial de Vínculo de Passageiros para Administrador */}
-        {isAdmin && (
-          <div className="pt-1">
+        {/* BOTÃO DE AÇÃO: ABRIR POP-UP DE EDIÇÃO */}
+        <div>
+          {isPersonalPending ? (
             <button
               type="button"
-              onClick={() => {
-                loadAdminPassengers();
-                setIsAdminLinkingOpen(true);
-              }}
-              className="w-full flex items-center justify-between p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 hover:bg-amber-500/25 transition text-left text-xs font-black"
+              disabled
+              className="w-full bg-amber-500/20 text-amber-800 dark:text-amber-300 font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs border border-amber-500/30 cursor-not-allowed opacity-90"
             >
-              <div className="flex items-center gap-2">
-                <Users size={16} className="text-amber-600 dark:text-amber-400" />
-                <span>Vincular Passageiro a Empresa Conveniada (Admin)</span>
-              </div>
-              <ChevronRight size={16} />
+              <Clock size={15} className="animate-pulse text-amber-600" />
+              <span>Alteração aguardando aprovação do administrador</span>
             </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleOpenPersonalModal}
+              className="w-full bg-[#F59E0B] hover:bg-[#D97706] active:scale-[0.98] text-slate-950 font-black py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs shadow-md shadow-amber-500/20 transition duration-200"
+            >
+              <Edit3 size={15} />
+              <span>Solicitar Alteração de Dados Pessoais</span>
+            </button>
+          )}
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2 font-medium">
+            🔒 Dados fixos protegidos. Edições passam por validação prévia da central.
+          </p>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 2. CARD DADOS DA EMPRESA (MODO SOMENTE LEITURA + BOTÃO POP-UP DE MODERAÇÃO) */}
+      {/* ========================================================================= */}
+      <div className="bg-white dark:bg-dark-800 rounded-3xl p-5 border border-slate-200/80 dark:border-dark-700/80 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building2 size={16} className="text-brand" />
+            <h3 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+              DADOS DA EMPRESA / CONVÊNIO
+            </h3>
           </div>
-        )}
+          <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-2.5 py-0.5 rounded-full">
+            <Lock size={10} /> Auditado
+          </span>
+        </div>
 
-        {/* Preferência de Pagamento Padrão */}
-        <div className="pt-2">
-          <label className="mb-2 block text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Forma de Pagamento Preferencial
-          </label>
-          <div className="grid grid-cols-2 gap-2.5">
-            <button
-              type="button"
-              onClick={() => setPaymentPreference('PIX')}
-              className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
-                paymentPreference === 'PIX'
-                  ? 'bg-brand/10 border-brand text-brand-700 dark:text-brand font-bold'
-                  : 'bg-slate-50 dark:bg-dark-900/50 border-slate-200 dark:border-dark-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              <QrCode size={18} className={paymentPreference === 'PIX' ? 'text-brand' : 'text-slate-400'} />
-              <div>
-                <div className="text-xs font-black">PIX Instantâneo</div>
-                <div className="text-[10px] text-slate-400">QR Code e Chave</div>
-              </div>
-            </button>
+        {/* FICHA CADASTRAL DA EMPRESA (SOMENTE LEITURA) */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-dark-900/50 border border-slate-100 dark:border-dark-700/60 space-y-3">
+          <div className="border-b border-slate-200/60 dark:border-dark-700/60 pb-2.5">
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+              Empresa Conveniada / Razão Social
+            </span>
+            <span className="text-sm font-black text-slate-900 dark:text-white">
+              {profile?.company || company || 'SR Logística & Transporte'}
+            </span>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => setPaymentPreference('VOUCHER')}
-              className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
-                paymentPreference === 'VOUCHER'
-                  ? 'bg-brand/10 border-brand text-brand-700 dark:text-brand font-bold'
-                  : 'bg-slate-50 dark:bg-dark-900/50 border-slate-200 dark:border-dark-700 text-slate-600 dark:text-slate-300'
-              }`}
-            >
-              <CreditCard size={18} className={paymentPreference === 'VOUCHER' ? 'text-brand' : 'text-slate-400'} />
-              <div>
-                <div className="text-xs font-black">Voucher Corporativo</div>
-                <div className="text-[10px] text-slate-400">Faturado pela Empresa</div>
-              </div>
-            </button>
+          <div className="grid grid-cols-2 gap-3 border-b border-slate-200/60 dark:border-dark-700/60 pb-2.5">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                Setor / Lotação
+              </span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {profile?.department || department || 'Operações e Gestão'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                Matrícula Funcional
+              </span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 font-mono">
+                {profile?.employee_registration || employeeRegistration || '—'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                Turno de Trabalho
+              </span>
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                {profile?.shift || shift || 'Comercial / Geral'}
+              </span>
+            </div>
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block mb-0.5">
+                Voucher Corporativo
+              </span>
+              <span className="text-xs font-black text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 size={13} /> {profile?.voucher_habilitado !== false ? 'Habilitado' : 'Sob Análise'}
+              </span>
+            </div>
           </div>
         </div>
 
-        <Button
-          type="submit"
-          variant="primary"
-          size="md"
-          full
-          disabled={isSaving}
-          className="mt-2 py-3"
-        >
-          <Save size={16} /> {isSaving ? 'Salvando...' : 'Salvar Alterações'}
-        </Button>
-      </form>
+        {/* BOTÃO DE AÇÃO: ABRIR POP-UP DE EMPRESA */}
+        <div>
+          <button
+            type="button"
+            onClick={handleOpenCompanyModal}
+            className="w-full bg-slate-100 hover:bg-slate-200 dark:bg-dark-700 dark:hover:bg-dark-600 active:scale-[0.98] text-slate-900 dark:text-white font-bold py-3 px-4 rounded-2xl flex items-center justify-center gap-2 text-xs border border-slate-200 dark:border-dark-600 transition duration-200"
+          >
+            <Building2 size={15} className="text-brand" />
+            <span>Solicitar Alteração da Empresa</span>
+          </button>
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center mt-2 font-medium">
+            🔒 Vínculo corporativo auditado pela SR Logística e Empresa Conveniada.
+          </p>
+        </div>
+      </div>
 
-      {/* Segurança & Entrada por Digital / Biometria */}
+      {/* Botão Especial de Vínculo de Passageiros para Administrador */}
+      {isAdmin && (
+        <div className="pt-1">
+          <button
+            type="button"
+            onClick={() => {
+              loadAdminPassengers();
+              setIsAdminLinkingOpen(true);
+            }}
+            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-900 dark:text-amber-200 hover:bg-amber-500/25 transition text-left text-xs font-black"
+          >
+            <div className="flex items-center gap-2">
+              <Users size={16} className="text-amber-600 dark:text-amber-400" />
+              <span>Vincular Passageiro a Empresa Conveniada (Admin)</span>
+            </div>
+            <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* 3. FORMA DE PAGAMENTO PREFERENCIAL */}
+      <div className="bg-white dark:bg-dark-800 rounded-3xl p-5 border border-slate-200/80 dark:border-dark-700/80 shadow-sm space-y-3">
+        <label className="block text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+          Forma de Pagamento Preferencial
+        </label>
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => handleSavePaymentPreference('PIX')}
+            className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
+              paymentPreference === 'PIX'
+                ? 'bg-brand/10 border-brand text-brand-700 dark:text-brand font-bold'
+                : 'bg-slate-50 dark:bg-dark-900/50 border-slate-200 dark:border-dark-700 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            <QrCode size={18} className={paymentPreference === 'PIX' ? 'text-brand' : 'text-slate-400'} />
+            <div>
+              <div className="text-xs font-black">PIX Instantâneo</div>
+              <div className="text-[10px] text-slate-400">QR Code e Chave</div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleSavePaymentPreference('VOUCHER')}
+            className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition-all ${
+              paymentPreference === 'VOUCHER'
+                ? 'bg-brand/10 border-brand text-brand-700 dark:text-brand font-bold'
+                : 'bg-slate-50 dark:bg-dark-900/50 border-slate-200 dark:border-dark-700 text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            <CreditCard size={18} className={paymentPreference === 'VOUCHER' ? 'text-brand' : 'text-slate-400'} />
+            <div>
+              <div className="text-xs font-black">Voucher Corporativo</div>
+              <div className="text-[10px] text-slate-400">Faturado pela Empresa</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* 4. SEGURANÇA & ENTRADA POR DIGITAL / BIOMETRIA */}
       <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 space-y-3 shadow-sm text-xs">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -950,138 +1193,320 @@ export default function PerfilPage() {
         )}
 
         <div className="pt-1 flex gap-2">
-          {!bioEnrolled ? (
+          {bioEnrolled ? (
             <Button
               type="button"
-              size="md"
-              full
-              disabled={bioLoading}
-              onClick={handleEnableBiometrics}
-              className="font-bold flex items-center justify-center gap-2"
+              variant="outline"
+              size="sm"
+              onClick={handleDisableBiometrics}
+              className="text-red-500 hover:text-red-600 border-red-200 dark:border-red-900/50 py-2"
             >
-              <Fingerprint size={16} />
-              {bioLoading ? 'Registrando...' : 'Cadastrar Digital Neste Aparelho'}
+              Remover Biometria deste Aparelho
             </Button>
           ) : (
             <Button
               type="button"
-              variant="outline"
-              size="md"
-              full
-              onClick={handleDisableBiometrics}
-              className="text-red-600 dark:text-red-400 border-red-500/30 hover:bg-red-500/10 font-bold"
+              variant="primary"
+              size="sm"
+              disabled={bioLoading}
+              onClick={handleEnableBiometrics}
+              className="py-2 font-bold"
             >
-              Desativar Biometria
+              {bioLoading ? 'Registrando...' : 'Cadastrar Biometria'}
             </Button>
           )}
         </div>
       </div>
 
-      {/* Central de Ajuda & Links Oficiais */}
-      <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-2 space-y-1 shadow-sm text-xs">
-        {/* Botão de Instalação do App no Celular */}
+      {/* 5. AÇÕES RÁPIDAS (INSTALAR, SUPORTE, LOGOUT) */}
+      <div className="space-y-2 pt-2">
         <button
           type="button"
           onClick={handleInstallApp}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-brand/10 hover:bg-brand/20 border border-brand/30 transition text-left"
+          className="w-full flex items-center justify-between p-4 rounded-3xl bg-white dark:bg-dark-800 border border-slate-200/80 dark:border-dark-700/80 hover:bg-slate-50 dark:hover:bg-dark-700/50 transition-all text-xs font-bold text-slate-800 dark:text-slate-100 shadow-sm"
         >
-          <div className="flex items-center gap-3 text-slate-900 dark:text-white font-bold">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand text-dark-950 font-black shadow-md shadow-brand/20">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-brand/10 text-brand">
               <Smartphone size={18} />
             </div>
-            <div>
-              <span className="text-sm font-black block flex items-center gap-1.5">
-                Instalar Aplicativo (Android / APK) <Sparkles size={13} className="text-amber-500" />
-              </span>
-              <p className="text-[10px] text-slate-500 dark:text-slate-300 font-medium">
-                Adicionar à tela de início com ícone e tela cheia
-              </p>
-            </div>
+            <span>Instalar Aplicativo no Celular (Android / APK)</span>
           </div>
-          <Download size={16} className="text-brand shrink-0" />
+          <ChevronRight size={16} className="text-slate-400" />
         </button>
 
         <button
           type="button"
           onClick={() => setIsSupportOpen(true)}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-dark-700/50 transition"
+          className="w-full flex items-center justify-between p-4 rounded-3xl bg-white dark:bg-dark-800 border border-slate-200/80 dark:border-dark-700/80 hover:bg-slate-50 dark:hover:bg-dark-700/50 transition-all text-xs font-bold text-slate-800 dark:text-slate-100 shadow-sm"
         >
-          <div className="flex items-center gap-3 text-slate-800 dark:text-slate-200 font-bold">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/15 text-blue-500">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 dark:bg-dark-700 text-slate-600 dark:text-slate-300">
               <HelpCircle size={18} />
             </div>
-            <div className="text-left">
-              <span className="text-sm font-bold block">Central de Suporte 24h</span>
-              <p className="text-[10px] text-slate-400 font-normal">
-                WhatsApp: {SR_SUPPORT_CONFIG.phone1} / {SR_SUPPORT_CONFIG.phone2}
-              </p>
-            </div>
+            <span>Central de Suporte & Termos de Uso</span>
           </div>
           <ChevronRight size={16} className="text-slate-400" />
         </button>
 
-        <a
-          href={SR_SUPPORT_CONFIG.websiteUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-dark-700/50 transition"
-        >
-          <div className="flex items-center gap-3 text-slate-800 dark:text-slate-200 font-bold">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-500">
-              <Globe size={18} />
-            </div>
-            <div className="text-left">
-              <span className="text-sm font-bold block">Portal Oficial SR Logística</span>
-              <p className="text-[10px] text-slate-400 font-normal">
-                www.srlogisticatrasporte.com.br
-              </p>
-            </div>
-          </div>
-          <ExternalLink size={16} className="text-slate-400" />
-        </a>
-
         <button
           type="button"
-          onClick={() => setIsSupportOpen(true)}
-          className="w-full flex items-center justify-between p-3.5 rounded-2xl hover:bg-slate-50 dark:hover:bg-dark-700/50 transition"
+          onClick={() => setShowSignOutConfirm(true)}
+          className="w-full flex items-center justify-center gap-2 p-3.5 rounded-3xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-bold transition-all"
         >
-          <div className="flex items-center gap-3 text-slate-800 dark:text-slate-200 font-bold">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand/15 text-brand-600 dark:text-brand">
-              <Shield size={18} />
-            </div>
-            <div className="text-left">
-              <span className="text-sm font-bold block">Privacidade, Termos & Segurança</span>
-              <p className="text-[10px] text-slate-400 font-normal">
-                LGPD e diretrizes de transporte seguro
-              </p>
-            </div>
-          </div>
-          <ChevronRight size={16} className="text-slate-400" />
+          <LogOut size={16} /> Encerrar Sessão
         </button>
       </div>
 
-      {/* Botão Sair da Conta com Confirmação */}
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        full
-        onClick={() => setShowSignOutConfirm(true)}
-        className="border-red-500/30 text-red-600 dark:text-red-400 hover:bg-red-500/10 py-3 rounded-2xl font-bold"
-      >
-        <LogOut size={16} /> Sair da Conta
-      </Button>
+      {/* ========================================================================= */}
+      {/* POP-UP / MODAL 1: SOLICITAR ALTERAÇÃO DE DADOS PESSOAIS */}
+      {/* ========================================================================= */}
+      {isPersonalModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-dark-800 p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Edit3 size={18} className="text-[#F59E0B]" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Solicitar Alteração Cadastral
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPersonalModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-full"
+              >
+                <X size={18} />
+              </button>
+            </div>
 
-      {/* Modal de Troca de Foto de Perfil */}
+            {/* Aviso Explícito de Moderação */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <div className="flex items-center gap-1.5 font-black text-amber-800 dark:text-amber-300">
+                <Lock size={14} />
+                <span>Moderação Administrativa</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                Por segurança e conformidade cadastral, qualquer alteração nestes dados será submetida para aprovação do administrador no painel web. Seus dados atuais continuarão válidos até a homologação.
+              </p>
+            </div>
+
+            {altSuccessMsg && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                ✓ {altSuccessMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitPersonalAlteration} className="space-y-3 text-xs">
+              <Field label="Nome Completo">
+                <Input
+                  value={modalName}
+                  onChange={(e) => setModalName(e.target.value)}
+                  placeholder="Nome completo conforme documento"
+                  required
+                />
+              </Field>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <Field label="Telefone / WhatsApp">
+                  <Input
+                    value={modalPhone}
+                    onChange={(e) => setModalPhone(e.target.value)}
+                    placeholder="(92) 99999-9999"
+                    required
+                  />
+                </Field>
+
+                <Field label="CPF (Documento)">
+                  <Input
+                    value={modalCpf}
+                    onChange={(e) => setModalCpf(e.target.value)}
+                    placeholder="000.000.000-00"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Endereço Residencial / Ponto de Embarque">
+                <Input
+                  value={modalAddress}
+                  onChange={(e) => setModalAddress(e.target.value)}
+                  placeholder="Rua, número, bairro em Manaus"
+                />
+              </Field>
+
+              <Field label="Justificativa da Alteração (Opcional)">
+                <textarea
+                  value={modalJustification}
+                  onChange={(e) => setModalJustification(e.target.value)}
+                  rows={2}
+                  placeholder="Ex: Mudança de endereço de residência ou correção de telefone..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 p-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  onClick={() => setIsPersonalModalOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={isSubmittingAlt}
+                  className="bg-[#F59E0B] hover:bg-[#D97706] text-slate-950 font-black"
+                >
+                  {isSubmittingAlt ? 'Enviando...' : 'Enviar para Análise'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* POP-UP / MODAL 2: SOLICITAR ALTERAÇÃO DE DADOS DA EMPRESA */}
+      {/* ========================================================================= */}
+      {isCompanyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-dark-800 p-5 sm:p-6 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-700 pb-3">
+              <div className="flex items-center gap-2">
+                <Building2 size={18} className="text-brand" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Solicitar Alteração da Empresa
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCompanyModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-full"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Aviso Explícito de Moderação Corporativa */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <div className="flex items-center gap-1.5 font-black text-amber-800 dark:text-amber-300">
+                <Building size={14} />
+                <span>Auditoria de Convênio Corporativo</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                A vinculação ou troca de empresa conveniada e matrícula funcional requer validação do setor de logística da SR e do convênio da empresa.
+              </p>
+            </div>
+
+            {altSuccessMsg && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                ✓ {altSuccessMsg}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitCompanyAlteration} className="space-y-3 text-xs">
+              <div>
+                <label className="text-[11px] font-semibold text-slate-500 mb-1 block">Empresa Conveniada</label>
+                <select
+                  value={partnerCompanies.some(c => c.name === modalCompany) ? modalCompany : 'Outra'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'Outra') {
+                      setModalCompany(e.target.value);
+                    }
+                  }}
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 py-2.5 px-3 text-xs font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand mb-2"
+                >
+                  {partnerCompanies.map((c, idx) => (
+                    <option key={idx} value={c.name}>{c.name}</option>
+                  ))}
+                  <option value="Outra">Outra / Digitar Manualmente</option>
+                </select>
+
+                <Input
+                  value={modalCompany}
+                  onChange={(e) => setModalCompany(e.target.value)}
+                  placeholder="Nome ou Razão Social da Empresa"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <Field label="Setor / Departamento">
+                  <Input
+                    value={modalDepartment}
+                    onChange={(e) => setModalDepartment(e.target.value)}
+                    placeholder="Ex: Operações, Produção, TI"
+                  />
+                </Field>
+
+                <Field label="Matrícula Funcional">
+                  <Input
+                    value={modalEmployeeRegistration}
+                    onChange={(e) => setModalEmployeeRegistration(e.target.value)}
+                    placeholder="Ex: MAT-9876"
+                  />
+                </Field>
+              </div>
+
+              <Field label="Turno de Trabalho">
+                <Input
+                  value={modalShift}
+                  onChange={(e) => setModalShift(e.target.value)}
+                  placeholder="Ex: 1º Turno (06h - 14h)"
+                />
+              </Field>
+
+              <Field label="Justificativa da Alteração (Opcional)">
+                <textarea
+                  value={modalCompanyJustification}
+                  onChange={(e) => setModalCompanyJustification(e.target.value)}
+                  rows={2}
+                  placeholder="Ex: Transferência de departamento ou nova empresa conveniada..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-dark-700 bg-white dark:bg-dark-900 p-2.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-2.5 pt-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="md"
+                  onClick={() => setIsCompanyModalOpen(false)}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={isSubmittingAlt}
+                  className="bg-brand hover:bg-brand-hover text-dark-950 font-black"
+                >
+                  {isSubmittingAlt ? 'Enviando...' : 'Enviar para Análise'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL DE FOTO DE PERFIL */}
+      {/* ========================================================================= */}
       {isAvatarModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-dark-800 p-5 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-dark-800 p-5 shadow-2xl border border-slate-200 dark:border-dark-700 space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-dark-700 pb-3">
               <div className="flex items-center gap-2">
                 <Camera size={18} className="text-brand" />
-                <h3 className="text-base font-black text-slate-900 dark:text-white">Foto de Perfil</h3>
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  Foto de Perfil do Passageiro
+                </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsAvatarModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
               >
@@ -1089,12 +1514,23 @@ export default function PerfilPage() {
               </button>
             </div>
 
-            {/* Opções de Upload Direto (Câmera & Galeria) */}
-            <div className="grid grid-cols-3 gap-2">
+            {/* Aviso de Aprovação de Foto */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-xs text-amber-900 dark:text-amber-200 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-amber-800 dark:text-amber-300">
+                <Clock size={14} />
+                <span>Validação pela Central SR Logística</span>
+              </div>
+              <p className="text-[11px] leading-relaxed text-amber-800 dark:text-amber-300/90">
+                Ao enviar uma foto pessoal, ela ficará com status <strong>"Aguardando aprovação"</strong> até ser homologada pelo administrador no painel web.
+              </p>
+            </div>
+
+            {/* Botões de Ação para Foto */}
+            <div className="grid grid-cols-3 gap-2.5 pt-1">
               <button
                 type="button"
                 onClick={() => cameraInputRef.current?.click()}
-                className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border-2 border-dashed border-brand/50 bg-brand/10 hover:bg-brand/20 transition-all text-center"
+                className="flex flex-col items-center justify-center gap-1.5 p-3 rounded-2xl border border-slate-200 dark:border-dark-700 bg-brand/10 hover:bg-brand/20 transition-all text-center"
               >
                 <div className="flex h-9 w-9 items-center justify-center rounded-full bg-brand text-dark-950 font-bold shadow-sm">
                   <Camera size={16} />
@@ -1212,6 +1648,7 @@ export default function PerfilPage() {
                 <h3 className="text-base font-black text-slate-900 dark:text-white">Instalar Aplicativo</h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsInstallModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
               >
@@ -1283,6 +1720,7 @@ export default function PerfilPage() {
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsAdminLinkingOpen(false)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-white text-xs font-bold px-2 py-1"
               >
