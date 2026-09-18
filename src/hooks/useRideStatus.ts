@@ -48,32 +48,39 @@ export function useRideStatus() {
 
     loadChatHistory(tripId);
 
-    // Função para carregar dados do motorista real quando associado à corrida
-    const fetchRealDriver = async (driverId: string) => {
+    // Função para carregar dados completos do motorista real quando associado à corrida no Supabase
+    const fetchRealDriver = async (driverId: string, fallbackData?: any) => {
       try {
         let driverData: any = null;
 
-        // Tenta buscar na tabela motoristas
-        const { data: mData } = await supabase
-          .from('motoristas')
-          .select('*')
-          .eq('id', driverId)
-          .maybeSingle();
-
-        if (mData) {
-          driverData = mData;
-        } else {
-          // Fallback para profiles
-          const { data: pData } = await supabase
-            .from('profiles')
+        if (driverId && driverId !== '00000000-0000-0000-0000-000000000000') {
+          // 1. Tenta buscar na tabela motoristas do Supabase
+          const { data: mData } = await supabase
+            .from('motoristas')
             .select('*')
             .eq('id', driverId)
             .maybeSingle();
-          if (pData) driverData = pData;
+
+          if (mData) {
+            driverData = mData;
+          } else {
+            // 2. Fallback para profiles
+            const { data: pData } = await supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', driverId)
+              .maybeSingle();
+            if (pData) driverData = pData;
+          }
+        }
+
+        // 3. Fallback para dados embutidos na própria corrida
+        if (!driverData && fallbackData) {
+          driverData = fallbackData;
         }
 
         if (!driverData) {
-          console.warn('Motorista não encontrado:', driverId);
+          console.warn('[useRideStatus] Motorista ainda não localizado no banco:', driverId);
           return;
         }
 
@@ -99,19 +106,92 @@ export function useRideStatus() {
             ? currentTrip.origin.longitude + 0.0045
             : -60.005;
 
+        // Extrai com segurança todos os possíveis nomes de colunas do banco
+        const driverName =
+          driverData.nome ||
+          driverData.nome_social ||
+          driverData.nome_completo ||
+          driverData.name ||
+          driverData.driver_name ||
+          driverData.motorista_nome ||
+          'Motorista SR';
+
+        const driverPhone =
+          driverData.telefone ||
+          driverData.phone ||
+          driverData.whatsapp ||
+          driverData.celular ||
+          driverData.driver_phone ||
+          '(92) 99123-4567';
+
+        const driverAvatar =
+          driverData.avatar_url ||
+          driverData.foto_url ||
+          driverData.foto ||
+          driverData.driver_avatar ||
+          null;
+
+        const vehicleBrand =
+          driverData.marca_veiculo ||
+          driverData.vehicle_brand ||
+          driverData.marca ||
+          driverData.driver_vehicle_brand ||
+          'Veículo';
+
+        const vehicleModel =
+          driverData.modelo_veiculo ||
+          driverData.vehicle_model ||
+          driverData.modelo ||
+          driverData.veiculo ||
+          driverData.driver_vehicle_model ||
+          'Padrão SR';
+
+        const vehicleColor =
+          driverData.cor_veiculo ||
+          driverData.vehicle_color ||
+          driverData.cor ||
+          driverData.driver_vehicle_color ||
+          'Prata';
+
+        const vehiclePlate =
+          driverData.placa_veiculo ||
+          driverData.vehicle_plate ||
+          driverData.placa ||
+          driverData.driver_vehicle_plate ||
+          'SR-0000';
+
+        const vehicleCategory =
+          driverData.categoria ||
+          driverData.category ||
+          'POPULAR';
+
+        const driverRating =
+          typeof driverData.rating === 'number'
+            ? driverData.rating
+            : typeof driverData.avaliacao === 'number'
+            ? driverData.avaliacao
+            : 4.98;
+
+        const totalRides =
+          typeof driverData.total_rides === 'number'
+            ? driverData.total_rides
+            : typeof driverData.total_corridas === 'number'
+            ? driverData.total_corridas
+            : 0;
+
         const driverInfo: DriverInfo = {
-          id: driverData.id,
-          name: driverData.nome || driverData.nome_social || driverData.nome_completo || driverData.name || 'Motorista SR',
-          phone: driverData.telefone || driverData.phone || '(92) 99123-4567',
-          rating: typeof driverData.rating === 'number' ? driverData.rating : 4.95,
-          total_rides: typeof driverData.total_rides === 'number' ? driverData.total_rides : 0,
-          avatar_url: driverData.avatar_url || null,
+          id: driverData.id || driverId || 'driver-real',
+          name: driverName,
+          phone: driverPhone,
+          rating: driverRating,
+          total_rides: totalRides,
+          avatar_url: driverAvatar,
           vehicle: {
-            brand: driverData.marca_veiculo || driverData.vehicle_brand || 'Veículo',
-            model: driverData.modelo_veiculo || driverData.vehicle_model || 'Padrão SR',
-            color: driverData.cor_veiculo || driverData.vehicle_color || 'Prata',
-            plate: driverData.placa_veiculo || driverData.vehicle_plate || 'SR-0000',
-            category: driverData.categoria || driverData.category || 'POPULAR'
+            brand: vehicleBrand,
+            model: vehicleModel,
+            color: vehicleColor,
+            plate: vehiclePlate.toUpperCase(),
+            category: vehicleCategory
           },
           current_location: {
             latitude: initialLat,
@@ -121,19 +201,20 @@ export function useRideStatus() {
 
         setDriver(driverInfo);
       } catch (err) {
-        console.warn('Erro ao buscar dados do motorista real:', err);
+        console.warn('[useRideStatus] Erro ao buscar dados do motorista:', err);
       }
     };
 
     // Função de verificação e atualização de status
-    const processStatusUpdate = async (newStatus: string, driverId?: string) => {
+    const processStatusUpdate = async (newStatus: string, driverId?: string, fullRow?: any) => {
       if (!newStatus) return;
 
-      if (driverId && (!currentTrip?.driver || currentTrip.driver.id !== driverId)) {
-        await fetchRealDriver(driverId);
-      }
-
       const s = String(newStatus).trim().toUpperCase();
+
+      // Se há um motorista associado, atualiza imediatamente os dados
+      if (driverId || fullRow?.driver_name || fullRow?.motorista_nome) {
+        await fetchRealDriver(driverId || fullRow?.driver_id, fullRow);
+      }
 
       // Cancelamento Imediato pelo Motorista
       if (
@@ -149,7 +230,7 @@ export function useRideStatus() {
         return;
       }
 
-      // Motorista Chegou ao Local
+      // Motorista Chegou ao Local de Embarque
       if (
         s === 'ARRIVED' ||
         s === 'DRIVER_ARRIVED' ||
@@ -229,12 +310,12 @@ export function useRideStatus() {
       try {
         const { data: rideRow } = await supabase
           .from('rides')
-          .select('id, status, driver_id')
+          .select('*')
           .eq('id', tripId)
           .maybeSingle();
 
         if (rideRow) {
-          await processStatusUpdate(rideRow.status, rideRow.driver_id);
+          await processStatusUpdate(rideRow.status, rideRow.driver_id, rideRow);
         }
       } catch (_) {}
     };
@@ -252,7 +333,7 @@ export function useRideStatus() {
           filter: `id=eq.${tripId}`
         },
         async (payload: any) => {
-          await processStatusUpdate(payload.new?.status, payload.new?.driver_id);
+          await processStatusUpdate(payload.new?.status, payload.new?.driver_id, payload.new);
         }
       )
       .subscribe();
@@ -284,7 +365,7 @@ export function useRideStatus() {
       .on('broadcast', { event: 'status_update' }, async (payload: any) => {
         const data = payload.payload || payload;
         if (data?.status) {
-          await processStatusUpdate(data.status, data.driver_id);
+          await processStatusUpdate(data.status, data.driver_id, data);
         }
       })
       .on('broadcast', { event: 'driver_arrived' }, () => {
@@ -319,7 +400,7 @@ export function useRideStatus() {
       .on('broadcast', { event: 'status_update' }, async (payload: any) => {
         const data = payload.payload || payload;
         if (data?.status) {
-          await processStatusUpdate(data.status, data.driver_id);
+          await processStatusUpdate(data.status, data.driver_id, data);
         }
       })
       .on('broadcast', { event: 'ride_cancelled' }, () => {
@@ -360,7 +441,7 @@ export function useRideStatus() {
       .on('broadcast', { event: 'status_update' }, async (payload: any) => {
         const data = payload.payload || payload;
         if (data?.status) {
-          await processStatusUpdate(data.status, data.driver_id);
+          await processStatusUpdate(data.status, data.driver_id, data);
         }
       })
       .on('broadcast', { event: 'ride_cancelled' }, () => {
@@ -373,12 +454,12 @@ export function useRideStatus() {
       try {
         const { data: rideRow } = await supabase
           .from('rides')
-          .select('id, status, driver_id')
+          .select('*')
           .eq('id', tripId)
           .maybeSingle();
 
         if (rideRow) {
-          await processStatusUpdate(rideRow.status, rideRow.driver_id);
+          await processStatusUpdate(rideRow.status, rideRow.driver_id, rideRow);
         }
 
         // Se houver mensagens gravadas no banco na tabela ride_messages

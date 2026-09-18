@@ -49,10 +49,13 @@ export default function CorridaDetalhePage({ params }: { params: Promise<{ id: s
             duration: `${Math.round((ride.distance_km || 4.5) * 3)} min`,
             category: 'SR Pop',
             driver: driverInfo ? {
-              name: driverInfo.nome || driverInfo.nome_social || 'Motorista SR',
-              vehicle: `${driverInfo.marca_veiculo || ''} ${driverInfo.modelo_veiculo || ''} · ${driverInfo.cor_veiculo || ''} (${driverInfo.placa_veiculo || ''})`,
+              name: driverInfo.nome || driverInfo.nome_social || driverInfo.nome_completo || 'Motorista SR',
+              brand: driverInfo.marca_veiculo || driverInfo.vehicle_brand || 'Veículo',
+              model: driverInfo.modelo_veiculo || driverInfo.vehicle_model || 'Padrão SR',
+              color: driverInfo.cor_veiculo || driverInfo.vehicle_color || 'Prata',
+              plate: (driverInfo.placa_veiculo || driverInfo.vehicle_plate || 'SR-0000').toUpperCase(),
               avatar: driverInfo.avatar_url,
-              rating: driverInfo.rating || 4.95
+              rating: driverInfo.rating || 4.98
             } : null,
             payment: {
               method: 'PIX',
@@ -143,29 +146,53 @@ export default function CorridaDetalhePage({ params }: { params: Promise<{ id: s
         </div>
       </div>
 
-      {/* Card do Motorista Real se atribuído */}
+      {/* Card do Motorista Real com Veículo e Placa Mercosul */}
       {ride.driver && (
-        <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-sm flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {ride.driver.avatar ? (
-              <img
-                src={ride.driver.avatar}
-                alt={ride.driver.name}
-                className="h-12 w-12 rounded-2xl object-cover border border-brand"
-              />
-            ) : (
-              <div className="h-12 w-12 rounded-2xl bg-dark-700 border border-brand flex items-center justify-center text-brand font-black">
-                {ride.driver.name.charAt(0)}
-              </div>
-            )}
-            <div>
-              <h3 className="text-sm font-black text-slate-900 dark:text-white">{ride.driver.name}</h3>
-              <p className="text-xs text-slate-400">{ride.driver.vehicle}</p>
-              <div className="flex items-center gap-1 text-[11px] font-bold text-brand mt-0.5">
-                <Star size={12} fill="#FFC800" /> {ride.driver.rating}
+        <div className="rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-4 shadow-sm space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {ride.driver.avatar ? (
+                <img
+                  src={ride.driver.avatar}
+                  alt={ride.driver.name}
+                  className="h-12 w-12 rounded-2xl object-cover border border-brand shrink-0"
+                />
+              ) : (
+                <div className="h-12 w-12 rounded-2xl bg-dark-700 border border-brand flex items-center justify-center text-brand font-black shrink-0">
+                  {ride.driver.name.charAt(0)}
+                </div>
+              )}
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Motorista</span>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">{ride.driver.name}</h3>
+                <div className="flex items-center gap-1 text-[11px] font-bold text-brand mt-0.5">
+                  <Star size={12} fill="#FFC800" /> {ride.driver.rating || 4.98}
+                </div>
               </div>
             </div>
+
+            {/* Placa Mercosul */}
+            {ride.driver.plate && (
+              <div className="shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-slate-800 dark:border-slate-300 bg-white shadow-sm overflow-hidden min-w-[80px]">
+                <div className="w-full bg-[#003399] px-2 py-0.5 text-center text-[6px] font-black text-white uppercase tracking-widest leading-none">
+                  BRASIL
+                </div>
+                <div className="px-2 py-0.5 text-[11px] font-black text-slate-950 font-mono tracking-wider">
+                  {ride.driver.plate}
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Dados do Carro */}
+          {(ride.driver.brand || ride.driver.model) && (
+            <div className="flex items-center gap-2 p-2 rounded-xl bg-slate-50 dark:bg-dark-900/60 border border-slate-100 dark:border-dark-700 text-xs text-slate-700 dark:text-slate-300">
+              <Car size={15} className="text-brand shrink-0" />
+              <span className="font-bold truncate">
+                {ride.driver.brand} {ride.driver.model} {ride.driver.color ? `· ${ride.driver.color}` : ''}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

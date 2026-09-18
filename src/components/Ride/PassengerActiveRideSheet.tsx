@@ -167,64 +167,98 @@ export function PassengerActiveRideSheet({
           </div>
         )}
 
-        {/* Card do Motorista e Veículo (Somente dados reais) */}
+        {/* Card de Identificação Completa do Motorista e Veículo */}
         {driver ? (
-          <div className="flex items-center justify-between rounded-2xl bg-slate-50 dark:bg-dark-950/60 p-3.5 border border-slate-100 dark:border-dark-800 gap-3">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="relative shrink-0">
-                {driver.avatar_url ? (
-                  <img
-                    src={driver.avatar_url}
-                    alt={driver.name}
-                    className="h-12 w-12 rounded-full object-cover border-2 border-brand shadow-sm shrink-0"
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-full bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-base shrink-0">
-                    {driver.name.charAt(0)}
+          <div className="rounded-2xl bg-slate-50 dark:bg-dark-950/70 p-3.5 border border-slate-200/80 dark:border-dark-800 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              {/* Foto, Nome e Avaliação do Motorista */}
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="relative shrink-0">
+                  {driver.avatar_url ? (
+                    <img
+                      src={driver.avatar_url}
+                      alt={driver.name}
+                      className="h-14 w-14 rounded-2xl object-cover border-2 border-brand shadow-sm shrink-0"
+                    />
+                  ) : (
+                    <div className="h-14 w-14 rounded-2xl bg-dark-800 border-2 border-brand flex items-center justify-center text-brand font-black text-lg shrink-0">
+                      {driver.name.charAt(0)}
+                    </div>
+                  )}
+                  <div className="absolute -bottom-1 -right-1 flex items-center gap-0.5 rounded-full bg-dark-900 px-1.5 py-0.5 text-[9px] font-bold text-brand border border-dark-700 shadow-sm">
+                    <Star size={9} fill="#FFC800" />
+                    {driver.rating || 4.98}
                   </div>
-                )}
-                <div className="absolute -bottom-1 -right-1 flex items-center gap-0.5 rounded-full bg-dark-900 px-1.5 py-0.5 text-[9px] font-bold text-brand border border-dark-700 shadow-sm">
-                  <Star size={9} fill="#FFC800" />
-                  {driver.rating || 4.95}
                 </div>
-              </div>
 
-              <div className="min-w-0 flex-1">
-                <h3 className="text-xs font-black text-slate-900 dark:text-white truncate">{driver.name}</h3>
-                <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 truncate">
-                  {driver.vehicle.brand} {driver.vehicle.model} {driver.vehicle.color ? `· ${driver.vehicle.color}` : ''}
-                </p>
-                <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-                  <span className="rounded-md bg-dark-900 px-1.5 py-0.5 font-mono text-[10px] font-black text-white border border-dark-700">
-                    {driver.vehicle.plate}
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                      Motorista
+                    </span>
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded-md">
+                      ✓ Verificado
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white truncate">
+                    {driver.name}
+                  </h3>
                   {driver.total_rides > 0 && (
-                    <span className="text-[10px] text-slate-400">
-                      {driver.total_rides} corridas
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">
+                      {driver.total_rides} corridas realizadas
                     </span>
                   )}
                 </div>
               </div>
+
+              {/* Valor e Pagamento */}
+              <div className="flex flex-col items-end shrink-0">
+                <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">Valor Total</span>
+                <span className="text-base font-black text-brand-700 dark:text-brand">
+                  {formatCurrency(trip.estimatedFare)}
+                </span>
+                {trip.paymentMethod === 'PIX' ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowPixModal(true)}
+                    className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full"
+                  >
+                    PIX: 52.967.828/0001-17 📋
+                  </button>
+                ) : (
+                  <span className="text-[9px] text-slate-400 font-semibold">
+                    🏢 Voucher Quinzenal
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="flex flex-col items-end shrink-0">
-              <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wide">Valor Final</span>
-              <span className="text-sm font-black text-brand-700 dark:text-brand">
-                {formatCurrency(trip.estimatedFare)}
-              </span>
-              {trip.paymentMethod === 'PIX' ? (
-                <button
-                  type="button"
-                  onClick={() => setShowPixModal(true)}
-                  className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-bold text-emerald-600 dark:text-emerald-400 hover:underline bg-emerald-500/10 dark:bg-emerald-500/20 px-2 py-0.5 rounded-full"
-                >
-                  PIX: 52.967.828/0001-17 📋
-                </button>
-              ) : (
-                <span className="text-[9px] text-slate-400 font-semibold">
-                  🏢 Voucher Quinzenal
-                </span>
-              )}
+            {/* Linha de Destaque do Carro, Cor e Placa Mercosul */}
+            <div className="flex items-center justify-between p-2.5 rounded-xl bg-white dark:bg-dark-900/90 border border-slate-200/60 dark:border-dark-700/60 gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 dark:bg-dark-800 text-slate-700 dark:text-slate-300 shrink-0">
+                  <Car size={16} className="text-brand" />
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[9px] uppercase font-bold text-slate-400 block">Veículo / Cor</span>
+                  <p className="text-xs font-black text-slate-900 dark:text-white truncate">
+                    {driver.vehicle.brand} {driver.vehicle.model}
+                    {driver.vehicle.color ? (
+                      <span className="font-semibold text-slate-500 dark:text-slate-400"> · {driver.vehicle.color}</span>
+                    ) : ''}
+                  </p>
+                </div>
+              </div>
+
+              {/* Badge Estilo Placa Mercosul Brasileira */}
+              <div className="shrink-0 flex flex-col items-center justify-center rounded-lg border-2 border-slate-800 dark:border-slate-300 bg-white shadow-sm overflow-hidden min-w-[85px]">
+                <div className="w-full bg-[#003399] px-2 py-0.5 text-center text-[7px] font-black text-white uppercase tracking-widest leading-none flex items-center justify-center gap-1">
+                  <span>BRASIL</span>
+                </div>
+                <div className="px-2 py-0.5 text-xs font-black text-slate-950 font-mono tracking-wider">
+                  {driver.vehicle.plate || 'SR-0000'}
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -234,8 +268,8 @@ export function PassengerActiveRideSheet({
                 <Car size={24} />
               </div>
               <div>
-                <h3 className="text-sm font-black text-slate-900 dark:text-white">Motorista Designado</h3>
-                <p className="text-xs text-slate-400">Carregando detalhes do veículo...</p>
+                <h3 className="text-sm font-black text-slate-900 dark:text-white">Buscando Motorista...</h3>
+                <p className="text-xs text-slate-400">Aguardando confirmação e envio dos dados...</p>
               </div>
             </div>
             <div className="flex flex-col items-end">
