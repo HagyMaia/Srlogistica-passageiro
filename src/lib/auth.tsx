@@ -22,6 +22,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   updateProfile: (updates: Partial<PassengerProfile>) => Promise<void>;
   loginAsGuest: (custom?: Partial<PassengerProfile>) => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const DEFAULT_PROFILE: PassengerProfile = {
@@ -46,7 +47,8 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   signOut: async () => {},
   updateProfile: async () => {},
-  loginAsGuest: async () => {}
+  loginAsGuest: async () => {},
+  refreshProfile: async () => {}
 });
 
 function getInitialCachedSession(): { user: any | null; profile: PassengerProfile | null } {
@@ -134,7 +136,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userMeta = currentUser.user_metadata || {};
       const appMeta = currentUser.app_metadata || {};
 
-      const isAdmin = userMeta.role === 'admin' || appMeta.role === 'admin' || profData?.role === 'admin';
+      const isExplicitAdmin = Boolean(
+        userMeta.role === 'admin' ||
+        userMeta.role === 'admin_master' ||
+        userMeta.role === 'master' ||
+        appMeta.role === 'admin' ||
+        (profData?.role === 'admin' && profData?.role !== 'passenger' && profData?.role !== 'driver')
+      );
+      const isAdmin = isExplicitAdmin;
 
       // 1. Leitura e Normalização do status da foto e aprovação geral do passageiro
       const rawFotoStatus = passData?.foto_status || profData?.foto_status || userMeta.foto_status;
@@ -212,19 +221,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         : (isApproved ? 'active' : (isAccountRejected || isPhotoRejected ? 'blocked' : 'pending'));
 
       const nameVal = 
+        passData?.nome || 
+        passData?.nome_social || 
         profData?.name || 
         profData?.nome || 
-        passData?.nome_social || 
-        passData?.nome || 
         userMeta.name || 
         userMeta.nome || 
         currentUser.email?.split('@')[0] || 
         'Passageiro';
 
       const phoneVal = 
+        passData?.telefone || 
+        passData?.phone || 
         profData?.phone || 
         profData?.telefone || 
-        passData?.telefone || 
         userMeta.phone || 
         userMeta.telefone || 
         '';
@@ -273,27 +283,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const companyVal = 
+        passData?.empresa || 
+        passData?.company || 
         profData?.company || 
         profData?.empresa || 
-        passData?.empresa || 
+        profData?.corporate_company || 
         userMeta.company || 
         userMeta.empresa || 
         '';
 
       const deptVal = 
+        passData?.setor || 
+        passData?.department || 
         profData?.department || 
         profData?.setor || 
-        passData?.setor || 
         userMeta.department || 
         userMeta.setor || 
         '';
 
       const cpfVal = passData?.cpf || profData?.cpf || userMeta.cpf || '';
-      const matriculaVal = passData?.matricula || profData?.matricula || profData?.employee_registration || userMeta.matricula || '';
-      const turnoVal = passData?.turno || profData?.turno || profData?.shift || userMeta.turno || '';
-      const enderecoVal = passData?.endereco || profData?.endereco || profData?.pickup_address || userMeta.endereco || '';
+      const matriculaVal = passData?.matricula || passData?.employee_registration || profData?.matricula || profData?.employee_registration || profData?.employee_id || userMeta.matricula || '';
+      const turnoVal = passData?.turno || passData?.shift || profData?.turno || profData?.shift || userMeta.turno || '';
+      const enderecoVal = passData?.endereco || passData?.pickup_address || profData?.pickup_address || profData?.endereco || userMeta.endereco || userMeta.pickup_address || '';
 
-      const roleVal = profData?.role || appMeta.role || userMeta.role || 'passenger';
+      const roleVal = isAdmin ? 'admin' : (profData?.role === 'admin' ? 'passenger' : (profData?.role || appMeta.role || userMeta.role || 'passenger'));
       const prefVal = (profData?.payment_preference || userMeta.payment_preference || 'VOUCHER') as 'PIX' | 'VOUCHER';
       const voucherHab = passData?.voucher_habilitado ?? profData?.voucher_habilitado ?? isApproved;
 
@@ -736,8 +749,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const refreshProfile = async () => {
+    try {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      if (currentUser) {
+        await fetchProfile(currentUser);
+      }
+    } catch (_) {}
+  };
+
   return (
-    <AuthContext.Provider value={{ user, profile, loading, isLoading: loading, signOut, updateProfile, loginAsGuest }}>
+    <AuthContext.Provider value={{ user, profile, loading, isLoading: loading, signOut, updateProfile, loginAsGuest, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -753,7 +775,8 @@ export function useAuth() {
       isLoading: false,
       signOut: async () => {},
       updateProfile: async () => {},
-      loginAsGuest: async () => {}
+      loginAsGuest: async () => {},
+      refreshProfile: async () => {}
     };
   }
   return context;

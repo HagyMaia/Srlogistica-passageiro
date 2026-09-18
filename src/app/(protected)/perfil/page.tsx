@@ -101,7 +101,7 @@ const EXECUTIVE_AVATARS = [
 ];
 
 export default function PerfilPage() {
-  const { user, profile, updateProfile, signOut } = useAuth();
+  const { user, profile, updateProfile, signOut, refreshProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -227,10 +227,48 @@ export default function PerfilPage() {
           (payload: any) => {
             if (payload.new) {
               const req = payload.new as AlterationRequest;
-              setPendingAlteration(req);
-              setAlterationStatus(req.status === 'Pendente' ? 'Aguardando aprovação' : req.status);
-              if (req.status === 'Rejeitado') {
+              if (req.status === 'Aprovado') {
+                setPendingAlteration(null);
+                setAlterationStatus('Aprovado');
+                setAlterationRejectionReason(null);
+
+                // Aplica imediatamente os novos dados oficiais no estado
+                const novos = req.dados_novos || {};
+                const novoNome = novos.nome || novos.name || novos.fullName || novos.nome_social;
+                const novoTel = novos.telefone || novos.phone || novos.whatsapp;
+                const novoCpf = novos.cpf;
+                const novoEnd = novos.endereco || novos.pickup_address || novos.address;
+                const novaEmpresa = novos.empresa || novos.company || novos.corporate_company;
+                const novoSetor = novos.setor || novos.department;
+                const novaMatricula = novos.matricula || novos.employee_registration || novos.employee_id;
+                const novoTurno = novos.turno || novos.shift;
+
+                if (novoNome) setName(novoNome);
+                if (novoTel) setPhone(novoTel);
+                if (novoCpf) setCpf(novoCpf);
+                if (novoEnd) setPickupAddress(novoEnd);
+                if (novaEmpresa) setCompany(novaEmpresa);
+                if (novoSetor) setDepartment(novoSetor);
+                if (novaMatricula) setEmployeeRegistration(novaMatricula);
+                if (novoTurno) setShift(novoTurno);
+
+                // Limpa pendência local
+                if (typeof window !== 'undefined') {
+                  try {
+                    localStorage.removeItem(`sr_passenger_pending_alt_${uid}`);
+                    localStorage.removeItem(`sr_passenger_alt_status_${uid}`);
+                  } catch (_) {}
+                }
+
+                // Recarrega o perfil oficial do Supabase
+                refreshProfile();
+              } else if (req.status === 'Rejeitado') {
+                setPendingAlteration(req);
+                setAlterationStatus('Rejeitado');
                 setAlterationRejectionReason(req.motivo_rejeicao || null);
+              } else {
+                setPendingAlteration(req);
+                setAlterationStatus('Aguardando aprovação');
               }
             }
           }
@@ -504,16 +542,24 @@ export default function PerfilPage() {
     try {
       const dadosAnteriores = {
         name: profile?.name || name,
+        nome: profile?.name || name,
+        full_name: profile?.name || name,
         phone: profile?.phone || phone,
+        telefone: profile?.phone || phone,
         cpf: profile?.cpf || cpf,
-        pickup_address: profile?.pickup_address || pickupAddress
+        pickup_address: profile?.pickup_address || pickupAddress,
+        endereco: profile?.pickup_address || pickupAddress
       };
 
       const dadosNovos = {
         name: modalName.trim(),
+        nome: modalName.trim(),
+        full_name: modalName.trim(),
         phone: modalPhone.trim(),
+        telefone: modalPhone.trim(),
         cpf: modalCpf.trim(),
-        pickup_address: modalAddress.trim()
+        pickup_address: modalAddress.trim(),
+        endereco: modalAddress.trim()
       };
 
       const req = await submitPassengerAlteration({
@@ -549,16 +595,26 @@ export default function PerfilPage() {
     try {
       const dadosAnteriores = {
         company: profile?.company || company,
+        empresa: profile?.company || company,
+        corporate_company: profile?.company || company,
         department: profile?.department || department,
+        setor: profile?.department || department,
         employee_registration: profile?.employee_registration || employeeRegistration,
-        shift: profile?.shift || shift
+        matricula: profile?.employee_registration || employeeRegistration,
+        shift: profile?.shift || shift,
+        turno: profile?.shift || shift
       };
 
       const dadosNovos = {
         company: modalCompany.trim(),
+        empresa: modalCompany.trim(),
+        corporate_company: modalCompany.trim(),
         department: modalDepartment.trim(),
+        setor: modalDepartment.trim(),
         employee_registration: modalEmployeeRegistration.trim(),
-        shift: modalShift.trim()
+        matricula: modalEmployeeRegistration.trim(),
+        shift: modalShift.trim(),
+        turno: modalShift.trim()
       };
 
       const req = await submitPassengerAlteration({
@@ -610,7 +666,14 @@ export default function PerfilPage() {
     profile?.foto_status !== 'Pendente' &&
     profile?.photo_status !== 'pending';
 
-  const isAdmin = profile?.role === 'admin';
+  // Somente administrador master explicitamente verificado
+  const isMasterRole = Boolean(
+    profile?.role === 'admin' ||
+    user?.app_metadata?.role === 'admin' ||
+    user?.user_metadata?.role === 'admin'
+  );
+  const isExcludedRole = profile?.role === 'passenger' || profile?.role === 'driver';
+  const isAdmin = Boolean(isMasterRole && !isExcludedRole);
 
   const isPersonalPending =
     alterationStatus === 'Aguardando aprovação' ||
