@@ -109,6 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       let profData: any = null;
       let passData: any = null;
+      let lastAltData: any = null;
 
       try {
         const { data } = await supabase.from('profiles').select('*').eq('id', currentUser.id).maybeSingle();
@@ -133,6 +134,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (_) {}
 
+      // Busca a última solicitação de alteração cadastral enviada para análise
+      try {
+        let altQuery = supabase.from('solicitacoes_alteracao').select('*');
+        if (currentUser.email) {
+          altQuery = altQuery.or(`usuario_id.eq.${currentUser.id},usuario_id.eq.${currentUser.email}`);
+        } else {
+          altQuery = altQuery.eq('usuario_id', currentUser.id);
+        }
+        const { data: altRes } = await altQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
+        lastAltData = altRes;
+      } catch (_) {}
+
+      const isAltApproved = lastAltData && (lastAltData.status === 'Aprovado' || lastAltData.status === 'aprovado');
+      const isAltPending = lastAltData && (lastAltData.status === 'Pendente' || lastAltData.status === 'pendente');
+      const isAltRejected = lastAltData && (lastAltData.status === 'Rejeitado' || lastAltData.status === 'rejeitado');
+      const approvedNovos = isAltApproved ? (lastAltData.dados_novos || {}) : {};
+
+      // Se a alteração foi aprovada pelo admin, limpa o estado de pendência local e sincroniza no banco
+      if (isAltApproved && typeof window !== 'undefined') {
+        try {
+          localStorage.removeItem(`sr_passenger_pending_alt_${currentUser.id}`);
+          localStorage.removeItem(`sr_passenger_alt_status_${currentUser.id}`);
+          if (currentUser.email) {
+            localStorage.removeItem(`sr_passenger_pending_alt_${currentUser.email}`);
+            localStorage.removeItem(`sr_passenger_alt_status_${currentUser.email}`);
+          }
+        } catch (_) {}
+
+        // Sincroniza os dados aprovados nas tabelas caso o admin tenha alterado apenas solicitacoes_alteracao
+        if (passData?.solicitacao_pendente || profData?.solicitacao_pendente) {
+          try {
+            const syncPayload: Record<string, any> = {
+              solicitacao_pendente: false,
+              updated_at: new Date().toISOString()
+            };
+            if (approvedNovos.nome || approvedNovos.name) syncPayload.nome = approvedNovos.nome || approvedNovos.name;
+            if (approvedNovos.telefone || approvedNovos.phone) syncPayload.telefone = approvedNovos.telefone || approvedNovos.phone;
+            if (approvedNovos.cpf) syncPayload.cpf = approvedNovos.cpf;
+            if (approvedNovos.endereco || approvedNovos.pickup_address) syncPayload.endereco = approvedNovos.endereco || approvedNovos.pickup_address;
+            if (approvedNovos.empresa || approvedNovos.company) syncPayload.empresa = approvedNovos.empresa || approvedNovos.company;
+            if (approvedNovos.setor || approvedNovos.department) syncPayload.setor = approvedNovos.setor || approvedNovos.department;
+
+            supabase.from('passageiros').update(syncPayload).eq('id', currentUser.id).then(() => {});
+            if (currentUser.email) {
+              supabase.from('passageiros').update(syncPayload).eq('email', currentUser.email).then(() => {});
+            }
+
+            const profSyncPayload: Record<string, any> = {
+              solicitacao_pendente: false,
+              updated_at: new Date().toISOString()
+            };
+            if (approvedNovos.name || approvedNovos.nome) profSyncPayload.name = approvedNovos.name || approvedNovos.nome;
+            if (approvedNovos.phone || approvedNovos.telefone) profSyncPayload.phone = approvedNovos.phone || approvedNovos.telefone;
+            if (approvedNovos.cpf) profSyncPayload.cpf = approvedNovos.cpf;
+            if (approvedNovos.pickup_address || approvedNovos.endereco) profSyncPayload.pickup_address = approvedNovos.pickup_address || approvedNovos.endereco;
+            if (approvedNovos.company || approvedNovos.empresa) profSyncPayload.company = approvedNovos.company || approvedNovos.empresa;
+            if (approvedNovos.department || approvedNovos.setor) profSyncPayload.department = approvedNovos.department || approvedNovos.setor;
+
+            supabase.from('profiles').update(profSyncPayload).eq('id', currentUser.id).then(() => {});
+            if (currentUser.email) {
+              supabase.from('profiles').update(profSyncPayload).eq('email', currentUser.email).then(() => {});
+            }
+          } catch (_) {}
+        }
+      }
+
       const userMeta = currentUser.user_metadata || {};
       const appMeta = currentUser.app_metadata || {};
 
@@ -149,6 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const rawFotoStatus = passData?.foto_status || profData?.foto_status || userMeta.foto_status;
       const rawStatus = passData?.status || profData?.status || userMeta.status;
       const rejectionReason = 
+        (isAltRejected ? lastAltData.motivo_rejeicao : null) ||
         passData?.motivo_rejeicao || 
         passData?.rejection_reason || 
         profData?.motivo_rejeicao || 
@@ -220,21 +288,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         ? 'active' 
         : (isApproved ? 'active' : (isAccountRejected || isPhotoRejected ? 'blocked' : 'pending'));
 
+      // Resolução de Nome: Prioriza dados aprovados pelo admin em solicitacoes_alteracao, depois passageiros, profiles e Auth
       const nameVal = 
+        approvedNovos.nome_completo ||
+        approvedNovos.nome ||
+        approvedNovos.name ||
+        approvedNovos.full_name ||
         passData?.nome || 
+        passData?.nome_completo ||
         passData?.nome_social || 
+        passData?.name ||
         profData?.name || 
         profData?.nome || 
+        profData?.full_name ||
+        profData?.nome_completo ||
         userMeta.name || 
         userMeta.nome || 
+        userMeta.full_name ||
         currentUser.email?.split('@')[0] || 
         'Passageiro';
 
+      // Resolução de Telefone: Prioriza dados aprovados pelo admin
       const phoneVal = 
+        approvedNovos.telefone ||
+        approvedNovos.phone ||
+        approvedNovos.whatsapp ||
         passData?.telefone || 
         passData?.phone || 
+        passData?.whatsapp ||
         profData?.phone || 
         profData?.telefone || 
+        profData?.whatsapp ||
         userMeta.phone || 
         userMeta.telefone || 
         '';
@@ -282,7 +366,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      // Resolução de Empresa: Prioriza dados aprovados pelo admin
       const companyVal = 
+        approvedNovos.empresa ||
+        approvedNovos.company ||
+        approvedNovos.corporate_company ||
         passData?.empresa || 
         passData?.company || 
         profData?.company || 
@@ -292,7 +380,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userMeta.empresa || 
         '';
 
+      // Resolução de Setor / Departamento: Prioriza dados aprovados
       const deptVal = 
+        approvedNovos.setor ||
+        approvedNovos.department ||
         passData?.setor || 
         passData?.department || 
         profData?.department || 
@@ -301,14 +392,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         userMeta.setor || 
         '';
 
-      const cpfVal = passData?.cpf || profData?.cpf || userMeta.cpf || '';
-      const matriculaVal = passData?.matricula || passData?.employee_registration || profData?.matricula || profData?.employee_registration || profData?.employee_id || userMeta.matricula || '';
-      const turnoVal = passData?.turno || passData?.shift || profData?.turno || profData?.shift || userMeta.turno || '';
-      const enderecoVal = passData?.endereco || passData?.pickup_address || profData?.pickup_address || profData?.endereco || userMeta.endereco || userMeta.pickup_address || '';
+      // Resolução de CPF: Prioriza dados aprovados
+      const cpfVal = 
+        approvedNovos.cpf ||
+        passData?.cpf || 
+        profData?.cpf || 
+        userMeta.cpf || 
+        '';
+
+      // Resolução de Matrícula: Prioriza dados aprovados
+      const matriculaVal = 
+        approvedNovos.matricula ||
+        approvedNovos.employee_registration ||
+        approvedNovos.employee_id ||
+        passData?.matricula || 
+        passData?.employee_registration || 
+        profData?.matricula || 
+        profData?.employee_registration || 
+        profData?.employee_id || 
+        userMeta.matricula || 
+        '';
+
+      // Resolução de Turno: Prioriza dados aprovados
+      const turnoVal = 
+        approvedNovos.turno ||
+        approvedNovos.shift ||
+        passData?.turno || 
+        passData?.shift || 
+        profData?.turno || 
+        profData?.shift || 
+        userMeta.turno || 
+        '';
+
+      // Resolução de Endereço / Ponto de Embarque: Prioriza dados aprovados pelo admin
+      const enderecoVal = 
+        approvedNovos.endereco ||
+        approvedNovos.pickup_address ||
+        approvedNovos.address ||
+        approvedNovos.ponto_embarque ||
+        passData?.endereco || 
+        passData?.pickup_address || 
+        passData?.address ||
+        passData?.ponto_embarque ||
+        profData?.pickup_address || 
+        profData?.endereco || 
+        profData?.address ||
+        userMeta.endereco || 
+        userMeta.pickup_address || 
+        userMeta.address ||
+        '';
 
       const roleVal = isAdmin ? 'admin' : (profData?.role === 'admin' ? 'passenger' : (profData?.role || appMeta.role || userMeta.role || 'passenger'));
       const prefVal = (profData?.payment_preference || userMeta.payment_preference || 'VOUCHER') as 'PIX' | 'VOUCHER';
       const voucherHab = passData?.voucher_habilitado ?? profData?.voucher_habilitado ?? isApproved;
+
+      // Status de solicitação pendente: se a alteração foi aprovada ou rejeitada, não está mais pendente
+      const isPendingCalculation = isAltApproved
+        ? false
+        : (isAltPending || Boolean(passData?.solicitacao_pendente || profData?.solicitacao_pendente));
 
       const finalProfile: PassengerProfile = {
         id: currentUser.id,
@@ -333,7 +474,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         rating: 5.0,
         total_rides: passData?.total_rides || 0,
         payment_preference: prefVal,
-        solicitacao_pendente: Boolean(passData?.solicitacao_pendente || profData?.solicitacao_pendente),
+        solicitacao_pendente: isPendingCalculation,
         status: statusVal as 'active' | 'pending' | 'blocked',
         is_approved: isApproved,
         created_at: currentUser.created_at || new Date().toISOString()
@@ -491,7 +632,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    // Realtime: ouve atualizações nas tabelas passageiros e profiles
+    // Realtime: ouve atualizações nas tabelas passageiros, profiles e solicitacoes_alteracao
     const passChannel = supabase
       .channel('public:auth_approvals')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'passageiros' }, async () => {
@@ -499,6 +640,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (currentUser) fetchProfile(currentUser);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, async () => {
+        const { data: { user: currentUser } } = await supabase.auth.getUser();
+        if (currentUser) fetchProfile(currentUser);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'solicitacoes_alteracao' }, async () => {
         const { data: { user: currentUser } } = await supabase.auth.getUser();
         if (currentUser) fetchProfile(currentUser);
       })

@@ -198,15 +198,60 @@ export default function PerfilPage() {
   // Carrega e sincroniza em tempo real as solicitações de alteração do passageiro
   useEffect(() => {
     const uid = profile?.id || user?.id;
-    if (!uid) return;
+    const email = profile?.email || user?.email;
+    if (!uid && !email) return;
 
     async function fetchAlterations() {
-      const lastReq = await getPassengerPendingAlteration(uid);
+      const lastReq = await getPassengerPendingAlteration(uid || '', email);
       if (lastReq) {
-        setPendingAlteration(lastReq);
-        setAlterationStatus(lastReq.status === 'Pendente' ? 'Aguardando aprovação' : lastReq.status);
-        if (lastReq.status === 'Rejeitado') {
+        if (lastReq.status === 'Aprovado' || (lastReq.status as string) === 'aprovado') {
+          setPendingAlteration(null);
+          setAlterationStatus('Aprovado');
+          setAlterationRejectionReason(null);
+
+          // Aplica imediatamente os novos dados oficiais no estado
+          const novos = lastReq.dados_novos || {};
+          const novoNome = novos.nome || novos.name || novos.fullName || novos.nome_completo;
+          const novoTel = novos.telefone || novos.phone || novos.whatsapp;
+          const novoCpf = novos.cpf;
+          const novoEnd = novos.endereco || novos.pickup_address || novos.address || novos.ponto_embarque;
+          const novaEmpresa = novos.empresa || novos.company || novos.corporate_company;
+          const novoSetor = novos.setor || novos.department;
+          const novaMatricula = novos.matricula || novos.employee_registration || novos.employee_id;
+          const novoTurno = novos.turno || novos.shift;
+
+          if (novoNome) setName(novoNome);
+          if (novoTel) setPhone(novoTel);
+          if (novoCpf) setCpf(novoCpf);
+          if (novoEnd) setPickupAddress(novoEnd);
+          if (novaEmpresa) setCompany(novaEmpresa);
+          if (novoSetor) setDepartment(novoSetor);
+          if (novaMatricula) setEmployeeRegistration(novaMatricula);
+          if (novoTurno) setShift(novoTurno);
+
+          // Limpa pendência local
+          if (typeof window !== 'undefined') {
+            try {
+              if (uid) {
+                localStorage.removeItem(`sr_passenger_pending_alt_${uid}`);
+                localStorage.removeItem(`sr_passenger_alt_status_${uid}`);
+              }
+              if (email) {
+                localStorage.removeItem(`sr_passenger_pending_alt_${email}`);
+                localStorage.removeItem(`sr_passenger_alt_status_${email}`);
+              }
+            } catch (_) {}
+          }
+
+          // Recarrega o perfil oficial do Supabase
+          refreshProfile();
+        } else if (lastReq.status === 'Rejeitado' || (lastReq.status as string) === 'rejeitado') {
+          setPendingAlteration(lastReq);
+          setAlterationStatus('Rejeitado');
           setAlterationRejectionReason(lastReq.motivo_rejeicao || null);
+        } else {
+          setPendingAlteration(lastReq);
+          setAlterationStatus('Aguardando aprovação');
         }
       }
     }
@@ -215,29 +260,35 @@ export default function PerfilPage() {
     // Sincronização em tempo real via Supabase Realtime
     if (supabase) {
       const channel = supabase
-        .channel(`passenger_alterations_${uid}`)
+        .channel(`passenger_alterations_${uid || email}`)
         .on(
           'postgres_changes',
           {
             event: '*',
             schema: 'public',
-            table: 'solicitacoes_alteracao',
-            filter: `usuario_id=eq.${uid}`
+            table: 'solicitacoes_alteracao'
           },
           (payload: any) => {
             if (payload.new) {
               const req = payload.new as AlterationRequest;
-              if (req.status === 'Aprovado') {
+              const matchesUser = 
+                (uid && req.usuario_id === uid) ||
+                (email && req.usuario_id === email) ||
+                (email && req.usuario_nome?.includes(email));
+
+              if (!matchesUser && req.usuario_id) return;
+
+              if (req.status === 'Aprovado' || (req.status as string) === 'aprovado') {
                 setPendingAlteration(null);
                 setAlterationStatus('Aprovado');
                 setAlterationRejectionReason(null);
 
                 // Aplica imediatamente os novos dados oficiais no estado
                 const novos = req.dados_novos || {};
-                const novoNome = novos.nome || novos.name || novos.fullName || novos.nome_social;
+                const novoNome = novos.nome || novos.name || novos.fullName || novos.nome_completo;
                 const novoTel = novos.telefone || novos.phone || novos.whatsapp;
                 const novoCpf = novos.cpf;
-                const novoEnd = novos.endereco || novos.pickup_address || novos.address;
+                const novoEnd = novos.endereco || novos.pickup_address || novos.address || novos.ponto_embarque;
                 const novaEmpresa = novos.empresa || novos.company || novos.corporate_company;
                 const novoSetor = novos.setor || novos.department;
                 const novaMatricula = novos.matricula || novos.employee_registration || novos.employee_id;
@@ -255,14 +306,20 @@ export default function PerfilPage() {
                 // Limpa pendência local
                 if (typeof window !== 'undefined') {
                   try {
-                    localStorage.removeItem(`sr_passenger_pending_alt_${uid}`);
-                    localStorage.removeItem(`sr_passenger_alt_status_${uid}`);
+                    if (uid) {
+                      localStorage.removeItem(`sr_passenger_pending_alt_${uid}`);
+                      localStorage.removeItem(`sr_passenger_alt_status_${uid}`);
+                    }
+                    if (email) {
+                      localStorage.removeItem(`sr_passenger_pending_alt_${email}`);
+                      localStorage.removeItem(`sr_passenger_alt_status_${email}`);
+                    }
                   } catch (_) {}
                 }
 
                 // Recarrega o perfil oficial do Supabase
                 refreshProfile();
-              } else if (req.status === 'Rejeitado') {
+              } else if (req.status === 'Rejeitado' || (req.status as string) === 'rejeitado') {
                 setPendingAlteration(req);
                 setAlterationStatus('Rejeitado');
                 setAlterationRejectionReason(req.motivo_rejeicao || null);
@@ -288,7 +345,7 @@ export default function PerfilPage() {
         window.removeEventListener('sr_passenger_alteration_updated', handleLocalUpdate);
       };
     }
-  }, [profile?.id, user?.id]);
+  }, [profile?.id, user?.id, profile?.email, user?.email]);
 
   // Carrega passageiros para ferramenta administrativa
   const loadAdminPassengers = async () => {
@@ -536,34 +593,43 @@ export default function PerfilPage() {
   const handleSubmitPersonalAlteration = async (e: React.FormEvent) => {
     e.preventDefault();
     const uid = profile?.id || user?.id;
-    if (!uid) return;
+    const userEmail = profile?.email || user?.email;
+    if (!uid && !userEmail) return;
 
     setIsSubmittingAlt(true);
     try {
       const dadosAnteriores = {
         name: profile?.name || name,
         nome: profile?.name || name,
+        nome_completo: profile?.name || name,
         full_name: profile?.name || name,
         phone: profile?.phone || phone,
         telefone: profile?.phone || phone,
+        whatsapp: profile?.phone || phone,
         cpf: profile?.cpf || cpf,
         pickup_address: profile?.pickup_address || pickupAddress,
-        endereco: profile?.pickup_address || pickupAddress
+        endereco: profile?.pickup_address || pickupAddress,
+        address: profile?.pickup_address || pickupAddress
       };
 
       const dadosNovos = {
         name: modalName.trim(),
         nome: modalName.trim(),
+        nome_completo: modalName.trim(),
         full_name: modalName.trim(),
         phone: modalPhone.trim(),
         telefone: modalPhone.trim(),
+        whatsapp: modalPhone.trim(),
         cpf: modalCpf.trim(),
         pickup_address: modalAddress.trim(),
-        endereco: modalAddress.trim()
+        endereco: modalAddress.trim(),
+        address: modalAddress.trim(),
+        ponto_embarque: modalAddress.trim()
       };
 
       const req = await submitPassengerAlteration({
-        userId: uid,
+        userId: uid || userEmail || '',
+        userEmail: userEmail || undefined,
         userName: modalName.trim() || profile?.name || 'Passageiro',
         tipoAlteracao: 'dados_pessoais',
         dadosAnteriores,
@@ -589,7 +655,8 @@ export default function PerfilPage() {
   const handleSubmitCompanyAlteration = async (e: React.FormEvent) => {
     e.preventDefault();
     const uid = profile?.id || user?.id;
-    if (!uid) return;
+    const userEmail = profile?.email || user?.email;
+    if (!uid && !userEmail) return;
 
     setIsSubmittingAlt(true);
     try {
@@ -618,7 +685,8 @@ export default function PerfilPage() {
       };
 
       const req = await submitPassengerAlteration({
-        userId: uid,
+        userId: uid || userEmail || '',
+        userEmail: userEmail || undefined,
         userName: profile?.name || name || 'Passageiro',
         tipoAlteracao: 'empresa',
         dadosAnteriores,
@@ -676,8 +744,8 @@ export default function PerfilPage() {
   const isAdmin = Boolean(isMasterRole && !isExcludedRole);
 
   const isPersonalPending =
-    alterationStatus === 'Aguardando aprovação' ||
-    profile?.solicitacao_pendente === true;
+    (alterationStatus === 'Aguardando aprovação' || profile?.solicitacao_pendente === true) &&
+    alterationStatus !== 'Aprovado';
 
   const isPersonalRejected =
     alterationStatus === 'Rejeitado' ||
