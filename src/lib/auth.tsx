@@ -136,29 +136,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const isAdmin = userMeta.role === 'admin' || appMeta.role === 'admin' || profData?.role === 'admin';
 
+      // 1. Leitura e Normalização do status da foto e aprovação geral do passageiro
+      const rawFotoStatus = passData?.foto_status || profData?.foto_status || userMeta.foto_status;
+      const rawStatus = passData?.status || profData?.status || userMeta.status;
+      const rejectionReason = 
+        passData?.motivo_rejeicao || 
+        passData?.rejection_reason || 
+        profData?.motivo_rejeicao || 
+        profData?.rejection_reason || 
+        userMeta.motivo_rejeicao || 
+        userMeta.rejection_reason || 
+        '';
+
+      const isAccountRejected = 
+        rawStatus === 'Reprovado' || 
+        rawStatus === 'reprovado' || 
+        rawStatus === 'Rejeitado' || 
+        rawStatus === 'rejeitado' || 
+        rawStatus === 'blocked' || 
+        rawStatus === 'rejected';
+
+      const isPhotoRejected = 
+        rawFotoStatus === 'Rejeitada' || 
+        rawFotoStatus === 'rejeitada' || 
+        rawFotoStatus === 'Reprovada' || 
+        rawFotoStatus === 'reprovada' || 
+        rawFotoStatus === 'rejected';
+
+      const isPhotoApproved = 
+        rawFotoStatus === 'Aprovada' || 
+        rawFotoStatus === 'aprovada' || 
+        rawFotoStatus === 'approved';
+
+      const isAccountApproved = 
+        (passData?.status === 'Aprovado' || passData?.status === 'aprovado' || passData?.is_approved === true) &&
+        !isAccountRejected &&
+        passData?.status !== 'Pendente' &&
+        passData?.status !== 'pendente';
+
       // Avaliação rigorosa da aprovação de perfil, empresa e vínculo:
       // Se houver registro na tabela 'passageiros', a decisão do painel administrativo é a fonte soberana
       let isApproved = false;
       if (isAdmin) {
         isApproved = true;
       } else if (passData) {
-        isApproved = 
-          (passData.status === 'Aprovado' || passData.status === 'aprovado' || passData.is_approved === true) &&
-          passData.status !== 'Pendente' &&
-          passData.status !== 'pendente' &&
-          passData.status !== 'Rejeitado';
+        isApproved = isAccountApproved && !isPhotoRejected;
       } else if (profData) {
         isApproved = 
           (profData.is_approved === true || profData.approved === true || profData.status === 'active' || profData.status === 'approved') &&
           profData.status !== 'pending' &&
-          profData.status !== 'blocked';
+          profData.status !== 'blocked' &&
+          !isPhotoRejected &&
+          !isAccountRejected;
       } else {
-        isApproved = userMeta.is_approved === true && userMeta.status !== 'pending';
+        isApproved = userMeta.is_approved === true && userMeta.status !== 'pending' && !isPhotoRejected && !isAccountRejected;
+      }
+
+      // foto_status canônico: 'Aprovada' | 'Rejeitada' | 'Pendente'
+      let finalFotoStatus: 'Pendente' | 'Aprovada' | 'Rejeitada' = 'Pendente';
+      let photoStatusVal: 'pending' | 'approved' | 'rejected' = 'pending';
+
+      if (isAdmin || isPhotoApproved || (isApproved && !isPhotoRejected)) {
+        finalFotoStatus = 'Aprovada';
+        photoStatusVal = 'approved';
+      } else if (isPhotoRejected || isAccountRejected) {
+        finalFotoStatus = 'Rejeitada';
+        photoStatusVal = 'rejected';
+      } else {
+        finalFotoStatus = 'Pendente';
+        photoStatusVal = 'pending';
       }
 
       const statusVal = isAdmin 
         ? 'active' 
-        : (isApproved ? 'active' : (passData?.status === 'Rejeitado' || profData?.status === 'blocked' ? 'blocked' : 'pending'));
+        : (isApproved ? 'active' : (isAccountRejected || isPhotoRejected ? 'blocked' : 'pending'));
 
       const nameVal = 
         profData?.name || 
@@ -200,7 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             ? await createCompactAvatarThumbnail(avatarVal)
             : avatarVal;
           supabase.auth.updateUser({
-            data: { avatar_url: compactThumb, foto: compactThumb, avatar: compactThumb }
+            data: { avatar_url: compactThumb, foto: compactThumb, avatar: compactThumb, foto_status: finalFotoStatus }
           }).catch(() => {});
         } catch (_) {}
       }
@@ -237,6 +288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const roleVal = profData?.role || appMeta.role || userMeta.role || 'passenger';
       const prefVal = (profData?.payment_preference || userMeta.payment_preference || 'VOUCHER') as 'PIX' | 'VOUCHER';
+      const voucherHab = passData?.voucher_habilitado ?? profData?.voucher_habilitado ?? isApproved;
 
       const finalProfile: PassengerProfile = {
         id: currentUser.id,
@@ -249,6 +301,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         pickup_address: enderecoVal || undefined,
         role: roleVal,
         avatar_url: avatarVal,
+        foto_url: passData?.foto_url || profData?.foto_url || avatarVal,
+        foto_status: finalFotoStatus,
+        photo_status: photoStatusVal,
+        motivo_rejeicao: rejectionReason || undefined,
+        rejection_reason: rejectionReason || undefined,
+        voucher_habilitado: voucherHab,
         company: companyVal || undefined,
         corporate_company: companyVal || undefined,
         department: deptVal || undefined,
@@ -272,11 +330,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       const fallbackInstantAvatar = getInstantSyncPassengerAvatar(currentUser.id, currentUser.email) || DEFAULT_AVATAR_URL;
-      const fallbackProf = {
+      const fallbackProf: PassengerProfile = {
         ...DEFAULT_PROFILE,
         id: currentUser.id,
         email: currentUser.email,
-        avatar_url: fallbackInstantAvatar
+        avatar_url: fallbackInstantAvatar,
+        foto_url: fallbackInstantAvatar,
+        foto_status: 'Pendente',
+        photo_status: 'pending'
       };
       setProfile(fallbackProf);
     }
@@ -463,8 +524,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const currentProf = profile || DEFAULT_PROFILE;
     const isUserAdmin = currentProf.role === 'admin' || user?.user_metadata?.role === 'admin';
 
+    // Se houver alteração na foto de perfil
+    const isPhotoUpdated = updates.avatar_url !== undefined && updates.avatar_url !== currentProf.avatar_url;
+
     // Se houver alteração em dados de perfil, empresa ou vínculo, e não for admin, coloca em análise
     const hasCompanyOrProfileChanges =
+      isPhotoUpdated ||
       (updates.company !== undefined && updates.company !== currentProf.company) ||
       (updates.department !== undefined && updates.department !== currentProf.department) ||
       (updates.name !== undefined && updates.name !== currentProf.name) ||
@@ -474,17 +539,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (updates.shift !== undefined && updates.shift !== currentProf.shift) ||
       (updates.pickup_address !== undefined && updates.pickup_address !== currentProf.pickup_address);
 
+    // Foto fica Pendente ao enviar nova foto (a menos que seja admin ou explicitamente definida)
+    const nextFotoStatus = updates.foto_status !== undefined
+      ? updates.foto_status
+      : (isUserAdmin ? 'Aprovada' : (isPhotoUpdated ? 'Pendente' : (currentProf.foto_status || 'Pendente')));
+
+    const nextPhotoStatus = updates.photo_status !== undefined
+      ? updates.photo_status
+      : (nextFotoStatus === 'Aprovada' ? 'approved' : (nextFotoStatus === 'Rejeitada' ? 'rejected' : 'pending'));
+
     const nextStatus = updates.status !== undefined
       ? updates.status
-      : (!isUserAdmin && hasCompanyOrProfileChanges ? 'pending' : (currentProf.status || 'pending'));
+      : (isUserAdmin ? 'active' : (isPhotoUpdated || hasCompanyOrProfileChanges ? 'pending' : (currentProf.status || 'pending')));
 
     const nextIsApproved = updates.is_approved !== undefined
       ? updates.is_approved
-      : (!isUserAdmin && hasCompanyOrProfileChanges ? false : (currentProf.is_approved ?? false));
+      : (isUserAdmin ? true : (isPhotoUpdated || hasCompanyOrProfileChanges ? false : (currentProf.is_approved ?? false)));
+
+    // Se reenviar nova foto após rejeição, limpa o motivo antigo
+    const nextRejectionReason = isPhotoUpdated && updates.motivo_rejeicao === undefined
+      ? undefined
+      : (updates.motivo_rejeicao !== undefined ? updates.motivo_rejeicao : currentProf.motivo_rejeicao);
 
     const next: PassengerProfile = {
       ...currentProf,
       ...updates,
+      foto_status: nextFotoStatus,
+      photo_status: nextPhotoStatus,
+      motivo_rejeicao: nextRejectionReason,
+      rejection_reason: nextRejectionReason,
       status: nextStatus as 'active' | 'pending' | 'blocked',
       is_approved: nextIsApproved
     };
@@ -499,7 +582,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await persistPassengerAvatar({
         userId: activeUserId,
         email: activeUserEmail,
-        avatarUrl: next.avatar_url
+        avatarUrl: next.avatar_url,
+        isCustom: true
       });
     }
 
@@ -531,7 +615,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               compactCloudAvatar = storageUrl;
             } else {
               compactCloudAvatar = await createCompactAvatarThumbnail(next.avatar_url);
-              cloudAvatarUrl = compactCloudAvatar;
+              cloudAvatarUrl = next.avatar_url;
             }
           } catch (_) {
             compactCloudAvatar = next.avatar_url;
@@ -551,10 +635,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               matricula: next.employee_registration,
               turno: next.shift,
               endereco: next.pickup_address,
-              avatar_url: cloudAvatarUrl,
-              foto: cloudAvatarUrl,
-              foto_url: cloudAvatarUrl,
-              avatar: cloudAvatarUrl,
+              avatar_url: compactCloudAvatar,
+              foto: compactCloudAvatar,
+              foto_url: compactCloudAvatar,
+              avatar: compactCloudAvatar,
+              foto_status: nextFotoStatus,
+              photo_status: nextPhotoStatus,
+              motivo_rejeicao: nextRejectionReason || null,
+              rejection_reason: nextRejectionReason || null,
               company: next.company,
               empresa: next.company,
               department: next.department,
@@ -584,6 +672,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               foto: cloudAvatarUrl || null,
               foto_url: cloudAvatarUrl || null,
               avatar: cloudAvatarUrl || null,
+              foto_status: nextFotoStatus,
+              photo_status: nextPhotoStatus,
+              motivo_rejeicao: nextRejectionReason || null,
+              rejection_reason: nextRejectionReason || null,
               role: next.role || 'passenger',
               status: next.status,
               is_approved: next.is_approved
@@ -592,7 +684,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // 4. Atualiza na tabela passageiros (fila de aprovação do painel admin com foto visível)
         try {
-          const passStatus = next.is_approved ? 'Aprovado' : 'Pendente';
+          const passStatus = next.is_approved ? 'Aprovado' : (nextFotoStatus === 'Rejeitada' ? 'Reprovado' : 'Pendente');
           const passPayload: any = {
             id: activeUserId,
             nome: next.name,
@@ -610,7 +702,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             foto_url: cloudAvatarUrl || null,
             avatar_url: cloudAvatarUrl || null,
             avatar: cloudAvatarUrl || null,
-            origem: hasCompanyOrProfileChanges ? 'Atualização de Perfil via App' : 'App Passageiro',
+            foto_status: nextFotoStatus,
+            motivo_rejeicao: nextRejectionReason || null,
+            voucher_habilitado: next.is_approved === true,
+            origem: isPhotoUpdated ? 'Upload de Foto via App' : (hasCompanyOrProfileChanges ? 'Atualização de Perfil via App' : 'App Passageiro'),
             status: passStatus,
             is_approved: next.is_approved,
             updated_at: new Date().toISOString()

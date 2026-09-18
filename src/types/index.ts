@@ -26,6 +26,8 @@ export interface PartnerCompany {
   created_at?: string;
 }
 
+export type PhotoApprovalStatus = 'Pendente' | 'Aprovada' | 'Rejeitada' | 'pending' | 'approved' | 'rejected';
+
 export interface PassengerProfile {
   id: string;
   name: string;
@@ -33,6 +35,12 @@ export interface PassengerProfile {
   phone?: string;
   cpf?: string;
   avatar_url?: string;
+  foto_url?: string;
+  foto_status?: string;
+  photo_status?: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  motivo_rejeicao?: string;
+  voucher_habilitado?: boolean;
   role: 'passenger' | 'driver' | 'admin';
   account_type?: PassengerAccountType;
   rating?: number;

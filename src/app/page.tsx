@@ -32,7 +32,8 @@ import {
   Award,
   Wallet,
   Eye,
-  EyeOff
+  EyeOff,
+  Camera
 } from 'lucide-react';
 import { Button, Card, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -222,7 +223,16 @@ export default function HomePage() {
   const [isSupportOpen, setIsSupportOpen] = useState(false);
   const [isPendingModalOpen, setIsPendingModalOpen] = useState(false);
 
-  const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
+  const isRejected =
+    profile?.foto_status === 'Rejeitada' ||
+    profile?.photo_status === 'rejected' ||
+    profile?.status === 'blocked';
+
+  const isApproved =
+    !isRejected &&
+    (profile?.is_approved === true || profile?.status === 'active') &&
+    profile?.foto_status !== 'Pendente' &&
+    profile?.photo_status !== 'pending';
 
   // Redireciona para tela de boas-vindas se não autenticado
   useEffect(() => {
@@ -810,7 +820,11 @@ export default function HomePage() {
           {/* Card do Usuário + Indicador de Motoristas Online */}
           <Link
             href="/perfil"
-            className="pointer-events-auto flex items-center gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-2 pr-3.5 shadow-2xl border border-slate-200/80 dark:border-dark-700/80 backdrop-blur-xl transition hover:scale-[1.02] active:scale-95"
+            className={`pointer-events-auto flex items-center gap-2.5 rounded-2xl bg-white/95 dark:bg-dark-900/95 p-2 pr-3.5 shadow-2xl border backdrop-blur-xl transition hover:scale-[1.02] active:scale-95 ${
+              isRejected
+                ? 'border-red-500/80 bg-red-50/90 dark:bg-red-950/40'
+                : 'border-slate-200/80 dark:border-dark-700/80'
+            }`}
           >
             <div className="relative">
               <img
@@ -819,16 +833,32 @@ export default function HomePage() {
                 onError={(e) => {
                   e.currentTarget.src = DEFAULT_AVATAR_URL;
                 }}
-                className="h-10 w-10 rounded-xl object-cover border-2 border-brand"
+                className={`h-10 w-10 rounded-xl object-cover border-2 ${
+                  isRejected
+                    ? 'border-red-500'
+                    : !isApproved
+                    ? 'border-amber-500'
+                    : 'border-brand'
+                }`}
               />
-              <span className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-dark-900" />
+              <span className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-white dark:border-dark-900 ${
+                isRejected
+                  ? 'bg-red-500'
+                  : !isApproved
+                  ? 'bg-amber-500'
+                  : 'bg-emerald-500'
+              }`} />
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1">
                 <span className="text-xs font-black text-slate-900 dark:text-white truncate max-w-[120px]">
                   {profile?.name || user?.user_metadata?.name || user?.email?.split('@')[0] || 'Passageiro'}
                 </span>
-                {!isApproved ? (
+                {isRejected ? (
+                  <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40 text-[9px] py-0 px-1 font-bold">
+                    Rejeitado: Reenviar
+                  </Badge>
+                ) : !isApproved ? (
                   <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[9px] py-0 px-1 font-bold">
                     Aguardando aprovação
                   </Badge>
@@ -839,8 +869,14 @@ export default function HomePage() {
                 ) : null}
               </div>
               <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 font-bold">
-                <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>{onlineDrivers.length > 0 ? `${onlineDrivers.length} motoristas ativos` : 'Radar ativo em Manaus'}</span>
+                {isRejected ? (
+                  <span className="text-red-600 dark:text-red-400 font-bold">Toque para reenviar</span>
+                ) : (
+                  <>
+                    <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>{onlineDrivers.length > 0 ? `${onlineDrivers.length} motoristas ativos` : 'Radar ativo em Manaus'}</span>
+                  </>
+                )}
               </div>
             </div>
           </Link>
@@ -857,6 +893,27 @@ export default function HomePage() {
             <ThemeToggle />
           </div>
         </div>
+
+        {/* Banner de Aviso de Foto Rejeitada pelo Administrador */}
+        {isRejected && (
+          <Link
+            href="/perfil"
+            className="pointer-events-auto self-center w-full max-w-md rounded-2xl bg-red-600 text-white p-3 shadow-2xl border border-red-400 flex items-center justify-between animate-in slide-in-from-top-2 duration-300"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white text-red-600 font-black shrink-0 shadow-sm">
+                <Camera size={18} />
+              </div>
+              <div className="text-left min-w-0">
+                <h4 className="text-xs font-black uppercase tracking-wider truncate">Foto Não Aprovada pelo Admin</h4>
+                <p className="text-[11px] text-red-100 font-medium truncate">
+                  Motivo: {profile?.motivo_rejeicao || profile?.rejection_reason || 'Reenvio necessário'}. Toque para reenviar.
+                </p>
+              </div>
+            </div>
+            <ArrowRight size={16} className="text-white shrink-0 ml-2" />
+          </Link>
+        )}
 
         {/* Notificação Flutuante / Toast de Chegada do Motorista */}
         {arrivalNotification && currentTrip?.status === 'DRIVER_ARRIVED' && (

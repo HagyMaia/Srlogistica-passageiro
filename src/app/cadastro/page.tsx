@@ -257,6 +257,13 @@ export default function CadastroPage() {
         turno: cleanTurno,
         origem: accountType === 'empresa' ? 'App Passageiro (Empresa)' : 'App Passageiro (Particular)',
         status: 'Pendente',
+        foto_status: 'Pendente',
+        foto: null,
+        foto_url: null,
+        avatar_url: null,
+        avatar: null,
+        motivo_rejeicao: null,
+        voucher_habilitado: false,
         created_at: new Date().toISOString()
       };
 
@@ -282,6 +289,10 @@ export default function CadastroPage() {
             corporate_company: accountType === 'empresa' ? cleanEmpresa : undefined,
             department: cleanSetor,
             cpf: cleanCpf,
+            foto_status: 'Pendente',
+            photo_status: 'pending',
+            motivo_rejeicao: null,
+            rejection_reason: null,
             status: 'pending',
             is_approved: false,
             approved: false,

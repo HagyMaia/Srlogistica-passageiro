@@ -28,7 +28,9 @@ import {
   Building,
   Briefcase,
   Search,
-  Users
+  Users,
+  AlertCircle,
+  AlertTriangle
 } from 'lucide-react';
 import { Button, Input, Field, Badge } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
@@ -300,7 +302,7 @@ export default function PerfilPage() {
     setIsUploadingPhoto(true);
 
     try {
-      const optimizedBase64 = await optimizeAvatarImage(file, 300, 0.8);
+      const optimizedBase64 = await optimizeAvatarImage(file, 400, 0.85);
       setAvatarUrl(optimizedBase64);
 
       // Persiste imediatamente em todas as camadas locais
@@ -311,12 +313,18 @@ export default function PerfilPage() {
         isCustom: true
       });
 
-      // Atualiza o estado global e a nuvem
-      await updateProfile({ avatar_url: optimizedBase64 });
+      // Atualiza o estado global e a nuvem com status "Aguardando aprovação" (Pendente)
+      await updateProfile({
+        avatar_url: optimizedBase64,
+        foto_url: optimizedBase64,
+        foto_status: 'Pendente',
+        photo_status: 'pending',
+        is_approved: false
+      });
 
       setIsAvatarModalOpen(false);
       setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 2500);
+      setTimeout(() => setSavedSuccess(false), 4000);
     } catch (err) {
       console.error('Erro ao processar imagem:', err);
       alert('Não foi possível processar esta foto. Tente outra imagem.');
@@ -401,7 +409,22 @@ export default function PerfilPage() {
     }
   };
 
-  const isApproved = profile?.is_approved !== false && profile?.status !== 'pending';
+  const isRejected =
+    profile?.foto_status === 'Rejeitada' ||
+    profile?.photo_status === 'rejected' ||
+    profile?.status === 'blocked';
+
+  const isPhotoPending =
+    profile?.foto_status === 'Pendente' ||
+    profile?.photo_status === 'pending' ||
+    profile?.status === 'pending';
+
+  const isApproved =
+    !isRejected &&
+    (profile?.is_approved === true || profile?.status === 'active') &&
+    profile?.foto_status !== 'Pendente' &&
+    profile?.photo_status !== 'pending';
+
   const isAdmin = profile?.role === 'admin';
 
   return (
@@ -440,6 +463,96 @@ export default function PerfilPage() {
         )}
       </div>
 
+      {/* 1. Alerta de Foto / Documentação Rejeitada pelo Administrador com Motivo */}
+      {isRejected && (
+        <div className="rounded-3xl border-2 border-red-500/50 bg-gradient-to-br from-red-500/15 via-red-500/5 to-transparent p-5 space-y-3.5 shadow-lg shadow-red-500/5 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-red-500 text-white font-black shadow-md shadow-red-500/30">
+              <AlertCircle size={24} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className="bg-red-500/20 text-red-700 dark:text-red-300 border-red-500/40 text-[10px] font-black">
+                  Foto / Documentação Não Aprovada
+                </Badge>
+              </div>
+              <h3 className="text-sm font-black text-slate-900 dark:text-white mt-1">
+                Reenvio de Foto / Documento Necessário
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                Sua foto ou documentação foi analisada pela administração da SR Logística e precisa de reenvio com as correções abaixo.
+              </p>
+            </div>
+          </div>
+
+          {/* Motivo informado pelo Administrador */}
+          <div className="rounded-2xl bg-white dark:bg-dark-900 border border-red-200 dark:border-red-900/50 p-3.5 space-y-1 text-xs">
+            <span className="font-bold text-red-600 dark:text-red-400 text-[11px] uppercase tracking-wider block">
+              Motivo informado pelo Administrador:
+            </span>
+            <p className="text-slate-900 dark:text-slate-100 font-semibold italic">
+              "{profile?.motivo_rejeicao || profile?.rejection_reason || 'Foto fora do padrão exigido ou ilegível. Por favor, envie uma foto nítida e bem iluminada do seu rosto.'}"
+            </p>
+          </div>
+
+          <div className="pt-1 flex flex-col sm:flex-row gap-2">
+            <Button
+              type="button"
+              variant="primary"
+              size="md"
+              onClick={() => setIsAvatarModalOpen(true)}
+              className="bg-red-600 hover:bg-red-700 text-white font-black flex items-center justify-center gap-2 shadow-md shadow-red-500/20 py-2.5"
+            >
+              <Camera size={16} /> Reenviar Foto Agora
+            </Button>
+            <button
+              type="button"
+              onClick={() => setIsPendingModalOpen(true)}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-dark-700 text-slate-700 dark:text-slate-200 text-xs font-bold hover:bg-slate-200 dark:hover:bg-dark-600 transition"
+            >
+              <HelpCircle size={14} /> Falar com Central / Suporte
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 2. Banner Informativo de Status "Aguardando aprovação" */}
+      {!isApproved && !isRejected && (
+        <div className="rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-500/15 via-amber-500/5 to-transparent p-4 space-y-2.5 shadow-sm animate-in fade-in">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500 text-dark-950 font-black shadow-md shadow-amber-500/20">
+              <Clock size={20} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge className="bg-amber-500/20 text-amber-800 dark:text-amber-300 border-amber-500/40 text-[10px] font-black">
+                  Aguardando aprovação
+                </Badge>
+              </div>
+              <h3 className="text-xs font-black text-slate-900 dark:text-white mt-1">
+                Foto e Cadastro em Análise pela Administração
+              </h3>
+              <p className="text-[11px] text-slate-600 dark:text-slate-300 mt-0.5 leading-relaxed">
+                Sua foto de perfil e dados cadastrais foram enviados para validação da central. O status permanecerá como <strong>"Aguardando aprovação"</strong> até que o administrador aprove ou rejeite no painel administrativo.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1 border-t border-amber-500/20 text-[11px]">
+            <span className="text-slate-500 dark:text-slate-400 font-medium">
+              Precisa de homologação prioritária?
+            </span>
+            <button
+              type="button"
+              onClick={() => setIsPendingModalOpen(true)}
+              className="font-bold text-amber-700 dark:text-amber-300 hover:underline flex items-center gap-1"
+            >
+              Ver Detalhes / WhatsApp <ChevronRight size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Card do Perfil com Botão de Foto */}
       <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 dark:border-dark-700/80 bg-white dark:bg-dark-800 p-5 shadow-sm">
         <div className="flex items-center gap-4">
@@ -451,17 +564,27 @@ export default function PerfilPage() {
               onError={(e) => {
                 e.currentTarget.src = DEFAULT_AVATAR_URL;
               }}
-              className="h-20 w-20 rounded-3xl object-cover border-2 border-brand shadow-md shadow-brand/10 transition-transform duration-200 group-hover:scale-105"
+              className={`h-20 w-20 rounded-3xl object-cover border-2 shadow-md transition-transform duration-200 group-hover:scale-105 ${
+                isRejected
+                  ? 'border-red-500 shadow-red-500/20'
+                  : !isApproved
+                  ? 'border-amber-500 shadow-amber-500/20'
+                  : 'border-brand shadow-brand/10'
+              }`}
             />
             <button
               type="button"
               onClick={() => setIsAvatarModalOpen(true)}
               disabled={isUploadingPhoto}
-              className="absolute -bottom-1.5 -right-1.5 flex h-8 w-8 items-center justify-center rounded-2xl bg-brand text-dark-950 font-bold border-2 border-white dark:border-dark-800 shadow-lg hover:scale-110 active:scale-95 transition-all"
+              className={`absolute -bottom-1.5 -right-1.5 flex h-8 w-8 items-center justify-center rounded-2xl font-bold border-2 border-white dark:border-dark-800 shadow-lg hover:scale-110 active:scale-95 transition-all ${
+                isRejected
+                  ? 'bg-red-600 text-white'
+                  : 'bg-brand text-dark-950'
+              }`}
               title="Trocar foto de perfil"
             >
               {isUploadingPhoto ? (
-                <div className="h-3.5 w-3.5 border-2 border-dark-950 border-t-transparent rounded-full animate-spin" />
+                <div className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
               ) : (
                 <Camera size={14} />
               )}
@@ -474,7 +597,7 @@ export default function PerfilPage() {
               <h2 className="text-lg font-black text-slate-900 dark:text-white truncate">
                 {profile?.name || name}
               </h2>
-              <CheckCircle2 size={16} className="text-brand shrink-0" />
+              {isApproved && <CheckCircle2 size={16} className="text-brand shrink-0" />}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 truncate flex items-center gap-1 mt-0.5">
               <Mail size={12} /> {profile?.email}
@@ -483,8 +606,16 @@ export default function PerfilPage() {
             <div className="mt-2.5 flex items-center gap-2 flex-wrap">
               {isApproved ? (
                 <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px] font-black">
-                  ✓ Conta Homologada
+                  ✓ Foto & Conta Homologada
                 </Badge>
+              ) : isRejected ? (
+                <button
+                  type="button"
+                  onClick={() => setIsAvatarModalOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-full bg-red-500/20 text-red-700 dark:text-red-300 border border-red-500/40 px-2.5 py-0.5 text-[10px] font-bold"
+                >
+                  <AlertCircle size={10} /> Foto Rejeitada: Reenviar
+                </button>
               ) : (
                 <button
                   type="button"
