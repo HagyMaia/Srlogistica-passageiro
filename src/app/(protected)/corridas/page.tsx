@@ -83,10 +83,12 @@ export default function CorridasPage() {
 
       if (isSupabaseConfigured) {
         // 1. Busca direta na tabela 'rides' filtrando pelo ID do passageiro
+        const passengerIds = Array.from(new Set([user?.id, profile?.id].filter(Boolean))) as string[];
+
         const { data: userRides, error: ridesErr } = await supabase
           .from('rides')
-          .select('id, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, fare_amount, distance_km, status, created_at, driver_id, passenger_id, payment_method, category')
-          .eq('passenger_id', user.id)
+          .select('id, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, fare_amount, distance_km, status, created_at, driver_id, passenger_id, payment_method')
+          .in('passenger_id', passengerIds)
           .order('created_at', { ascending: false });
 
         if (!ridesErr && Array.isArray(userRides)) {
@@ -100,7 +102,7 @@ export default function CorridasPage() {
             if (Array.isArray(savedLocalIds) && savedLocalIds.length > 0) {
               const { data: localRides } = await supabase
                 .from('rides')
-                .select('id, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, fare_amount, distance_km, status, created_at, driver_id, passenger_id, payment_method, category')
+                .select('id, pickup_address, dropoff_address, pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, fare_amount, distance_km, status, created_at, driver_id, passenger_id, payment_method')
                 .in('id', savedLocalIds)
                 .order('created_at', { ascending: false });
 
@@ -178,11 +180,33 @@ export default function CorridasPage() {
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, profile]);
 
   useEffect(() => {
     loadRides();
-  }, [loadRides]);
+
+    if (!isSupabaseConfigured || !user?.id) return;
+
+    const channel = supabase
+      .channel(`rides_history_realtime_${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'rides',
+          filter: `passenger_id=eq.${user.id}`
+        },
+        () => {
+          loadRides();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [loadRides, user?.id]);
 
   const handleCancelScheduled = async (tripId: string) => {
     if (confirm('Tem certeza que deseja cancelar este agendamento?')) {

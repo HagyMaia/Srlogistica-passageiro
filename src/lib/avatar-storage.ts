@@ -301,17 +301,31 @@ export async function uploadAvatarToSupabaseStorage(
   if (!isSupabaseConfigured || !userId) return null;
   try {
     let blob: Blob;
-    if (typeof base64OrBlob === 'string' && base64OrBlob.startsWith('data:')) {
-      const parts = base64OrBlob.split(',');
-      const mimeMatch = parts[0].match(/:(.*?);/);
-      const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-      const bstr = atob(parts[1]);
-      let n = bstr.length;
-      const u8arr = new Uint8Array(n);
-      while (n--) {
-        u8arr[n] = bstr.charCodeAt(n);
+    if (typeof base64OrBlob === 'string') {
+      if (base64OrBlob.startsWith('http://') || base64OrBlob.startsWith('https://')) {
+        return base64OrBlob;
       }
-      blob = new Blob([u8arr], { type: mime });
+      if (base64OrBlob.startsWith('blob:')) {
+        try {
+          const resp = await fetch(base64OrBlob);
+          blob = await resp.blob();
+        } catch (_) {
+          return null;
+        }
+      } else if (base64OrBlob.startsWith('data:')) {
+        const parts = base64OrBlob.split(',');
+        const mimeMatch = parts[0].match(/:(.*?);/);
+        const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        const bstr = atob(parts[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n);
+        }
+        blob = new Blob([u8arr], { type: mime });
+      } else {
+        return null;
+      }
     } else if (base64OrBlob instanceof Blob) {
       blob = base64OrBlob;
     } else {
@@ -319,7 +333,9 @@ export async function uploadAvatarToSupabaseStorage(
     }
 
     const cleanId = userId.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const fileName = `passenger_${cleanId}_${Date.now()}.jpg`;
+    const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+    const fileName = `passenger_${cleanId}_${Date.now()}.${extension}`;
+    const contentType = blob.type || 'image/jpeg';
     const bucketsToTry = ['avatars', 'passageiros', 'perfil', 'public'];
 
     for (const bucket of bucketsToTry) {
@@ -327,7 +343,7 @@ export async function uploadAvatarToSupabaseStorage(
         const { data, error } = await supabase.storage
           .from(bucket)
           .upload(fileName, blob, {
-            contentType: 'image/jpeg',
+            contentType,
             upsert: true
           });
 

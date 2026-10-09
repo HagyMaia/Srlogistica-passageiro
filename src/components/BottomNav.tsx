@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Home, Clock, Wallet, User } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { useAuth } from '@/lib/auth';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Início', icon: Home },
@@ -14,9 +15,17 @@ const NAV_ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
+  const { profile } = useAuth();
 
   // Não exibe o BottomNav nas telas de onboarding/autenticação
-  if (pathname === '/login' || pathname === '/cadastro' || pathname === '/welcome') {
+  if (
+    pathname === '/login' ||
+    pathname === '/cadastro' ||
+    pathname === '/welcome' ||
+    pathname?.startsWith('/recuperar-senha') ||
+    pathname?.startsWith('/esqueci-senha') ||
+    pathname?.startsWith('/redefinir-senha')
+  ) {
     return null;
   }
 
@@ -28,6 +37,8 @@ export default function BottomNav() {
             pathname === href ||
             (href === '/' && pathname === '/mapa') ||
             (href !== '/' && pathname.startsWith(href));
+
+          const isProfileWithAvatar = href === '/perfil' && Boolean(profile?.avatar_url);
 
           return (
             <Link
@@ -42,13 +53,21 @@ export default function BottomNav() {
             >
               <div
                 className={cn(
-                  'flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-200',
+                  'flex h-9 w-9 items-center justify-center rounded-xl border transition-all duration-200 overflow-hidden',
                   active
                     ? 'border-brand-500/40 bg-brand-500/20 text-brand-700 dark:text-brand-400 shadow-sm scale-105'
                     : 'border-transparent bg-slate-100/80 dark:bg-dark-800/80 text-slate-500 dark:text-slate-400'
                 )}
               >
-                <Icon size={18} strokeWidth={active ? 2.4 : 1.8} />
+                {isProfileWithAvatar ? (
+                  <img
+                    src={profile!.avatar_url!}
+                    alt="Perfil"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Icon size={18} strokeWidth={active ? 2.4 : 1.8} />
+                )}
               </div>
               <span
                 className={cn(

@@ -682,6 +682,8 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
         const ridePayload = {
           id: newTripId,
           passenger_id: validPassengerId,
+          passenger_name: passenger.name || 'Passageiro',
+          payment_method: selectedPaymentMethod || 'PIX',
           pickup_address: origin.address || `${origin.latitude}, ${origin.longitude}`,
           pickup_lat: origin.latitude,
           pickup_lng: origin.longitude,
@@ -730,7 +732,14 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       if (isSupabaseConfigured) {
         await supabase
           .from('rides')
-          .update({ status: 'CANCELLED' })
+          .update({
+            status: 'CANCELLED',
+            cancel_reason: reason,
+            motivo_cancelamento: reason,
+            cancelled_by: 'passenger',
+            autor_cancelamento: 'PASSENGER',
+            cancelled_at: now
+          })
           .eq('id', currentTrip.id);
       }
     } catch (_) {}
@@ -846,7 +855,10 @@ export const usePassengerTripStore = create<PassengerTripStore>((set, get) => ({
       if (isSupabaseConfigured) {
         await supabase
           .from('rides')
-          .update({ status: 'COMPLETED' })
+          .update({
+            status: 'COMPLETED',
+            completed_at: now
+          })
           .eq('id', currentTrip.id);
       }
     } catch (_) {}

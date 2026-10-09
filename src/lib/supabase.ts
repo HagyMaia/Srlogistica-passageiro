@@ -453,6 +453,11 @@ export function createMockSupabase() {
             filters.push((row) => String(row[column] ?? '') !== String(value ?? ''));
             return builder;
           },
+          in(column: string, values: any[]) {
+            const set = new Set(values.map(String));
+            filters.push((row) => set.has(String(row[column] ?? '')));
+            return builder;
+          },
           order(column: string, options?: { ascending?: boolean }) {
             orderCol = column;
             orderAsc = options?.ascending !== false;
@@ -506,6 +511,30 @@ export function createMockSupabase() {
           return { error: null, data: nextRecords[0] || nextRecords };
         },
 
+        async upsert(values: any) {
+          const records = loadTableData(table);
+          const itemsToUpsert = Array.isArray(values) ? values : [values];
+          let updatedRecords = [...records];
+
+          for (const item of itemsToUpsert) {
+            const idx = updatedRecords.findIndex((r) =>
+              (item.id && r.id === item.id) ||
+              (item.email && r.email && String(r.email).toLowerCase() === String(item.email).toLowerCase())
+            );
+            if (idx >= 0) {
+              updatedRecords[idx] = { ...updatedRecords[idx], ...item, updated_at: new Date().toISOString() };
+            } else {
+              updatedRecords.push({
+                ...item,
+                id: String(item.id || `sr-${table}-${Date.now()}`),
+                created_at: item.created_at || new Date().toISOString()
+              });
+            }
+          }
+          setMockTableData(table, updatedRecords);
+          return { error: null, data: itemsToUpsert[0] || itemsToUpsert };
+        },
+
         select(columns?: string) {
           return createQueryBuilder().select(columns);
         },
@@ -518,6 +547,26 @@ export function createMockSupabase() {
           return createQueryBuilder().delete();
         },
       };
+    },
+
+    storage: {
+      from(bucket: string) {
+        return {
+          async upload(path: string, _file: any, _options?: any) {
+            return {
+              data: { path },
+              error: null
+            };
+          },
+          getPublicUrl(path: string) {
+            return {
+              data: {
+                publicUrl: `https://mock-storage.local/${bucket}/${path}`
+              }
+            };
+          }
+        };
+      }
     },
   };
 }

@@ -452,6 +452,19 @@ export default function PerfilPage() {
     }
   }, [profile]);
 
+  // Escuta evento customizado de atualização do avatar para sincronização instantânea
+  useEffect(() => {
+    const handleAvatarUpdate = (e: any) => {
+      if (e?.detail?.avatarUrl) {
+        setAvatarUrl(e.detail.avatarUrl);
+      }
+    };
+    window.addEventListener('sr_avatar_updated', handleAvatarUpdate);
+    return () => {
+      window.removeEventListener('sr_avatar_updated', handleAvatarUpdate);
+    };
+  }, []);
+
   // Escuta evento do Android para instalação direta do aplicativo
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {

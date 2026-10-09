@@ -777,6 +777,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const storageUrl = await uploadAvatarToSupabaseStorage(activeUserId || 'user', next.avatar_url);
             if (storageUrl) {
               cloudAvatarUrl = storageUrl;
+              next.avatar_url = storageUrl;
+              next.foto_url = storageUrl;
+              setProfile({ ...next, avatar_url: storageUrl, foto_url: storageUrl });
+              await persistPassengerAvatar({
+                userId: activeUserId,
+                email: activeUserEmail,
+                avatarUrl: storageUrl,
+                isCustom: true
+              });
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('sr_avatar_updated', {
+                    detail: { avatarUrl: storageUrl, userId: activeUserId, email: activeUserEmail, isCustom: true }
+                  })
+                );
+              }
             }
           } catch (_) {}
         }

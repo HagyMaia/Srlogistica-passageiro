@@ -3,7 +3,7 @@ import './globals.css';
 import { AuthProvider } from '@/lib/auth';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import BottomNav from '@/components/BottomNav';
+import { AppShell } from '@/components/AppShell';
 import { PWARegister } from '@/components/PWARegister';
 
 export const metadata: Metadata = {
@@ -76,10 +76,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeProvider>
           <AuthProvider>
             <PWARegister />
-            <div className="mx-auto min-h-dvh max-w-md w-full flex flex-col relative bg-[color:var(--surface)] dark:bg-dark-900 shadow-2xl overflow-x-hidden pb-16">
-              {children}
-              <BottomNav />
-            </div>
+            <AppShell>{children}</AppShell>
           </AuthProvider>
         </ThemeProvider>
       </body>
